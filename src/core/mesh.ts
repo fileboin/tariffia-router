@@ -344,6 +344,10 @@ export class InferenceMesh {
       ...(req.mesh ?? {}),
       ...(parsed.mesh ? { mesh: parsed.mesh } : {}),
     };
+    // The requested output budget is a scoring signal; take it from the request
+    // itself so a client-supplied value in `mesh` cannot influence scoring.
+    if (typeof req.max_tokens === 'number') merged.maxOutputTokens = req.max_tokens;
+    else delete merged.maxOutputTokens;
     if (!this.enforceFreeOnly) return merged;
     return this.enforceFreeOnlyRoute(merged);
   }

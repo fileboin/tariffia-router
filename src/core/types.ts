@@ -304,6 +304,36 @@ export interface RouteRequest {
   mask?: string[];
   /** Estimated tokens for this call; used for token-quota admission. */
   estimatedTokens?: number;
+  /**
+   * Requested output budget, mirrored from the request's `max_tokens`. A
+   * scoring signal only (whether the context window can hold the answer); it is
+   * not a hard filter.
+   */
+  maxOutputTokens?: number;
+}
+
+/**
+ * One machine-readable part of a candidate's score. `contribution` already has
+ * the weight and the normalisation applied, so the components sum to `score`.
+ */
+export interface ScoreComponent {
+  key:
+    | 'capability'
+    | 'context'
+    | 'output'
+    | 'cost'
+    | 'quality'
+    | 'latency'
+    | 'language'
+    | 'availability';
+  /** Normalised signal value, 0..1. */
+  value: number;
+  /** Weight applied to this component. */
+  weight: number;
+  /** weight * value / totalWeight — this component's share of the score. */
+  contribution: number;
+  /** Human-readable explanation of the signal that was applied. */
+  reason: string;
 }
 
 export interface ScoredCandidate {
@@ -311,6 +341,8 @@ export interface ScoredCandidate {
   score: number;
   /** Per-term contributions, for explaining a decision. */
   terms: Record<string, number>;
+  /** Explicit score components, each with a machine-readable reason. */
+  components: ScoreComponent[];
 }
 
 /** Why a candidate was dropped. Surfaced so a 'no candidates' error is debuggable. */

@@ -41,17 +41,21 @@ Modifications (MIT permits this; recorded for upstream tracking):
   guard. The default adapter map also registers the new `anthropic` adapter, the
   `route` event carries the deterministic task analysis, and the analyzer's
   `requiredCapabilities` are merged into the request's capabilities as a hard
-  pre-scoring filter. No other routing or fallback behavior changed.
+  pre-scoring filter. The candidate ranking step now delegates to the new
+  explainable scorer (`src/core/scorer.ts`), preserving the existing scoring
+  signals, weights and deterministic tie-break. No other routing or fallback
+  behavior changed.
 - `src/core/gateway.ts` — in addition to the removals above, a `POST /v1/messages`
   route was added for Anthropic-compatible clients. The OpenAI-compatible route
   is unchanged.
 - `src/core/types.ts` — `'anthropic'` added to `ProviderKind`.
 - `src/core/config.ts` — `'anthropic'` added to the set of valid provider kinds.
-- `src/core/index.ts` — exports the new `AnthropicAdapter` and the analyzer.
+- `src/core/index.ts` — exports the new `AnthropicAdapter`, the analyzer and the
+  scorer.
 
 New Tariffia files (not derived from upstream; own MIT-licensed code):
-`src/core/analyzer.ts`, `src/core/providers/anthropic.ts` and
-`src/core/providers/anthropic-wire.ts`.
+`src/core/analyzer.ts`, `src/core/scorer.ts`, `src/core/providers/anthropic.ts`
+and `src/core/providers/anthropic-wire.ts`.
 
 All other imported files are byte-identical to the pinned upstream commit.
 
