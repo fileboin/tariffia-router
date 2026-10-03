@@ -35,10 +35,27 @@ were removed, together with their imports of `setup-ui.ts` and
 logic was changed. All other imported files are byte-identical to the pinned
 upstream commit.
 
-Held back (approved in `docs/10` but not imported in this step):
-`embedded-registry.ts` + `providers.default.json` (separate ship decision), and
-the upstream tests (require import-path adaptation and a TypeScript test
-toolchain).
+Adapted tests imported into `tests/` (upstream tests with relative imports
+rewritten from `../src/...` to `../src/core/...`, and blocks that depend on
+non-imported modules or upstream repo files removed):
+
+```
+tests/helpers.ts
+tests/routing.test.ts
+tests/mesh.test.ts
+tests/ledger.test.ts
+tests/concurrency.test.ts
+tests/gemini.test.ts
+tests/mesh-mask.test.ts
+tests/redact.test.ts
+tests/gateway.test.ts
+tests/runtime-agnostic.test.ts
+```
+
+Held back (approved in `docs/10` but not imported): `embedded-registry.ts` +
+`providers.default.json` (separate ship decision), and the upstream tests
+`server-stream.test.ts` (requires the rejected Node server) and
+`package.test.ts` (upstream package-shape coherence, not core).
 
 The full MIT notice for the imported code:
 

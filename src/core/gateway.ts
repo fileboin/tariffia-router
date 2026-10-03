@@ -13,7 +13,7 @@
 // `validation-probe.ts` modules. No routing logic was changed. See
 // THIRD_PARTY_NOTICES.md.
 import { InferenceMesh } from './mesh.js';
-import { blendedPrice, maxPrivacyOf } from './registry.js';
+import { blendedPrice, maxPrivacyOf, type Registry } from './registry.js';
 import { MeshError, NoCandidateError, type ChatRequest, type ProviderConfig } from './types.js';
 
 /**
