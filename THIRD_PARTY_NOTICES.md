@@ -1,19 +1,46 @@
 # Third-party notices
 
-**No third-party source has been imported yet.** This file records the locked
-vendoring decision and the attribution that must be reproduced at import time.
-
-## Planned: InferenceMesh (core, not yet imported)
+## Imported: InferenceMesh core (vendored into `src/core/`)
 
 - Upstream: https://github.com/gdalabs/inferencemesh
 - Pinned commit: `5e3004b6b4c01a6b72353515d82d2796e43d3972`
-- Licence: MIT
-- Copyright: `Copyright (c) 2026 GDA Labs`
-- Import target: `src/core/`
+- Version at that commit: `0.1.0`
+- Licence: MIT — `Copyright (c) 2026 GDA Labs`
 - Decision record: [docs/10-vendor-decision-inferencemesh.md](./docs/10-vendor-decision-inferencemesh.md)
 
-No files have been copied. When they are, each vendored file keeps its original
-licence header and the following MIT notice is reproduced in full:
+Imported files (mirroring the upstream `src/` layout):
+
+```
+src/core/types.ts
+src/core/registry.ts
+src/core/config.ts
+src/core/router.ts
+src/core/health.ts
+src/core/ledger.ts
+src/core/concurrency.ts
+src/core/mesh.ts
+src/core/gateway.ts        [modified — see below]
+src/core/redact.ts
+src/core/version.ts
+src/core/index.ts
+src/core/providers/base.ts
+src/core/providers/openai-compat.ts
+src/core/providers/gemini.ts
+```
+
+Modifications (MIT permits this; recorded for upstream tracking): in
+`src/core/gateway.ts` the upstream `/setup` page route and the `/v1/keys` route
+were removed, together with their imports of `setup-ui.ts` and
+`validation-probe.ts` (both excluded from the approved import set). No routing
+logic was changed. All other imported files are byte-identical to the pinned
+upstream commit.
+
+Held back (approved in `docs/10` but not imported in this step):
+`embedded-registry.ts` + `providers.default.json` (separate ship decision), and
+the upstream tests (require import-path adaptation and a TypeScript test
+toolchain).
+
+The full MIT notice for the imported code:
 
 ```
 MIT License
