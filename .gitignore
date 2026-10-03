@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+vendor/
+
+# Build output
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# Runtime / local state
+data/
+*.sqlite
+*.sqlite3
+*.db
+
+# Secrets and local config — never commit keys
+.env
+.env.*
+!.env.example
+config.local.json
+registry/providers.local.json
+registry/*.secret.json
+*.pem
+*.key
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

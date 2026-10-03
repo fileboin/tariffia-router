@@ -1,0 +1,21 @@
+{
+  "name": "tariffia-router",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Universal, provider-independent AI model router. Local / free first. OpenAI- and Anthropic-compatible.",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "tariffia": "./dist/src/cli/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test dist/test/**/*.test.js"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}
