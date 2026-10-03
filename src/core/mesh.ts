@@ -12,6 +12,7 @@ import { QuotaLedger } from './ledger.js';
 import { Router } from './router.js';
 import { costOf, isFree, type Registry } from './registry.js';
 import { ProviderError, type Adapter, type FetchLike } from './providers/base.js';
+import { AnthropicAdapter } from './providers/anthropic.js';
 import { GeminiAdapter } from './providers/gemini.js';
 import { OpenAICompatAdapter } from './providers/openai-compat.js';
 import { redact, restore } from './redact.js';
@@ -284,6 +285,7 @@ export class InferenceMesh {
     this.adapters = opts.adapters ?? {
       'openai-compat': new OpenAICompatAdapter(),
       'workers-ai': new OpenAICompatAdapter(),
+      anthropic: new AnthropicAdapter(),
       gemini: new GeminiAdapter(),
     };
   }

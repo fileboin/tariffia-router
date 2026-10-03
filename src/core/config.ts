@@ -13,7 +13,7 @@ export interface RegistryFile {
   defaultProfile?: string;
 }
 
-const VALID_KINDS = new Set(['openai-compat', 'gemini', 'workers-ai']);
+const VALID_KINDS = new Set(['openai-compat', 'anthropic', 'gemini', 'workers-ai']);
 
 /**
  * Every capability the router understands.

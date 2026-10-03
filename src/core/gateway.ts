@@ -15,6 +15,12 @@
 import { InferenceMesh } from './mesh.js';
 import { blendedPrice, maxPrivacyOf, type Registry } from './registry.js';
 import { MeshError, NoCandidateError, type ChatRequest, type ProviderConfig } from './types.js';
+import {
+  anthropicRequestToInternal,
+  internalToAnthropicResponse,
+  openAIStreamToAnthropic,
+  type AnthropicRequest,
+} from './providers/anthropic-wire.js';
 
 /**
  * How the gateway persists a key it has just verified.
@@ -86,6 +92,30 @@ function json(data: unknown, status: number, extra: Record<string, string> = {})
 
 function errorBody(message: string, code: string, detail?: unknown): unknown {
   return { error: { message, type: code, code, ...(detail === undefined ? {} : { detail }) } };
+}
+
+/** Anthropic error envelope: `{ type: 'error', error: { type, message } }`. */
+function anthropicErrorType(status: number): string {
+  switch (status) {
+    case 400:
+      return 'invalid_request_error';
+    case 401:
+      return 'authentication_error';
+    case 403:
+      return 'permission_error';
+    case 404:
+      return 'not_found_error';
+    case 429:
+      return 'rate_limit_error';
+    case 503:
+      return 'overloaded_error';
+    default:
+      return status >= 500 ? 'api_error' : 'invalid_request_error';
+  }
+}
+
+function anthropicError(message: string, status: number): unknown {
+  return { type: 'error', error: { type: anthropicErrorType(status), message } };
 }
 
 /**
@@ -263,6 +293,48 @@ export async function handleRequest(req: Request, opts: GatewayOptions): Promise
       }
       const message = err instanceof Error ? err.message : String(err);
       return json(errorBody(message, 'internal_error'), 500, ch);
+    }
+  }
+
+  if (url.pathname === '/v1/messages' && req.method === 'POST') {
+    let body: AnthropicRequest;
+    try {
+      body = (await req.json()) as AnthropicRequest;
+    } catch {
+      return json(anthropicError('request body is not valid JSON', 400), 400, ch);
+    }
+    if (!body || typeof body.model !== 'string' || !Array.isArray(body.messages)) {
+      return json(anthropicError('`model` (string) and `messages` (array) are required', 400), 400, ch);
+    }
+
+    // Translated to the internal shape first, so the same routing, fallback and
+    // server-side FREE_ONLY gate apply to Anthropic clients as to OpenAI ones.
+    const internal = anthropicRequestToInternal(body, { stream: Boolean(body.stream) });
+    try {
+      if (body.stream) {
+        const { stream } = await opts.mesh.stream(internal, req.signal);
+        return new Response(openAIStreamToAnthropic(stream, internal.model), {
+          status: 200,
+          headers: {
+            'content-type': 'text/event-stream; charset=utf-8',
+            'cache-control': 'no-cache, no-transform',
+            connection: 'keep-alive',
+            ...ch,
+          },
+        });
+      }
+      const res = await opts.mesh.chat(internal, req.signal);
+      return json(internalToAnthropicResponse(res, internal.model), 200, {
+        'x-mesh-served-by': res.mesh?.served_by ?? '',
+        'x-mesh-profile': res.mesh?.profile ?? '',
+        ...ch,
+      });
+    } catch (err) {
+      if (err instanceof MeshError) {
+        return json(anthropicError(err.message, err.status), err.status, ch);
+      }
+      const message = err instanceof Error ? err.message : String(err);
+      return json(anthropicError(message, 500), 500, ch);
     }
   }
 

@@ -39,7 +39,7 @@ export const PRIVACY_ORDER: Record<PrivacyLevel, number> = {
 export type LanguageTag = string;
 
 /** Wire protocol an adapter speaks. */
-export type ProviderKind = 'openai-compat' | 'gemini' | 'workers-ai';
+export type ProviderKind = 'openai-compat' | 'anthropic' | 'gemini' | 'workers-ai';
 
 export interface Quota {
   /** Hard cap on requests inside a rolling minute. */

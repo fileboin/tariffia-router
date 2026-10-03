@@ -38,7 +38,17 @@ Modifications (MIT permits this; recorded for upstream tracking):
   `enforceFreeOnly` mesh option (default off), request sanitisation that drops a
   pin to a non-free/unknown model and forces the free-only profile, a ranked
   chain filter that removes non-free candidates, and a final execution-boundary
-  guard. No other routing or fallback behavior changed.
+  guard. The default adapter map also registers the new `anthropic` adapter. No
+  other routing or fallback behavior changed.
+- `src/core/gateway.ts` — in addition to the removals above, a `POST /v1/messages`
+  route was added for Anthropic-compatible clients. The OpenAI-compatible route
+  is unchanged.
+- `src/core/types.ts` — `'anthropic'` added to `ProviderKind`.
+- `src/core/config.ts` — `'anthropic'` added to the set of valid provider kinds.
+- `src/core/index.ts` — exports the new `AnthropicAdapter`.
+
+New Tariffia files (not derived from upstream; own MIT-licensed code):
+`src/core/providers/anthropic.ts` and `src/core/providers/anthropic-wire.ts`.
 
 All other imported files are byte-identical to the pinned upstream commit.
 

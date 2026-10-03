@@ -18,6 +18,7 @@ export type { MeshOptions, MeshEvent, StreamResult } from './mesh.js';
 export { registryFrom, validateRegistryFile } from './config.js';
 export type { RegistryFile } from './config.js';
 export { OpenAICompatAdapter } from './providers/openai-compat.js';
+export { AnthropicAdapter } from './providers/anthropic.js';
 export { GeminiAdapter } from './providers/gemini.js';
 export { ProviderError } from './providers/base.js';
 export type { Adapter, AdapterContext, FetchLike } from './providers/base.js';
