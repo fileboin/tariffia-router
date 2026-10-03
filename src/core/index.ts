@@ -6,6 +6,8 @@
  */
 
 export * from './types.js';
+export { analyzeRequest } from './analyzer.js';
+export type { AnalyzeOptions, Protocol, TaskRequirements } from './analyzer.js';
 export { Registry, DEFAULT_PROFILES, blendedPrice, costOf, isFree, languageScore } from './registry.js';
 export type { RegistryOptions, LoadWarning } from './registry.js';
 export { Router } from './router.js';

@@ -6,6 +6,7 @@
  * whether "why" is worth trying somebody else for.
  */
 
+import { analyzeRequest, type AnalyzeOptions, type TaskRequirements } from './analyzer.js';
 import { ConcurrencyLimiter, type Slot } from './concurrency.js';
 import { HealthTracker } from './health.js';
 import { QuotaLedger } from './ledger.js';
@@ -47,6 +48,8 @@ export interface MeshEvent {
   ms?: number;
   costUsd?: number;
   usage?: Usage;
+  /** Deterministic task analysis for this request. Present on the 'route' event. */
+  analysis?: TaskRequirements;
 }
 
 export interface MeshOptions {
@@ -299,6 +302,14 @@ export class InferenceMesh {
   }
 
   /**
+   * Expose the deterministic task analysis to callers of the routing pipeline.
+   * Pure and side-effect free; it does not influence model selection.
+   */
+  analyze(req: ChatRequest, opts: AnalyzeOptions = {}): TaskRequirements {
+    return analyzeRequest(req, opts);
+  }
+
+  /**
    * Swap in a freshly loaded registry without restarting.
    *
    * Needed because keys arrive *after* the process starts — someone adds one
@@ -393,7 +404,7 @@ export class InferenceMesh {
     const routeReq = this.routeFor(req);
     let decision = this.router.route(routeReq);
     if (this.enforceFreeOnly) decision = this.enforceFreeOnlyDecision(decision);
-    this.onEvent({ type: 'route', profile: decision.profile.name });
+    this.onEvent({ type: 'route', profile: decision.profile.name, analysis: analyzeRequest(req) });
 
     if (decision.ranked.length === 0) {
       throw new NoCandidateError(
