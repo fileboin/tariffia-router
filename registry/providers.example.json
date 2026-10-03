@@ -1,47 +1,31 @@
 {
   "$comment": [
-    "Tariffia Router registry — TEMPLATE ONLY.",
-    "Copy to registry/providers.local.json (gitignored) and fill in.",
-    "No real API keys here: keys come from the environment via apiKeyEnv.",
-    "This schema is a proposal and may change in MVP step 2.",
-    "toSrisk: 'ok' | 'caution' | 'avoid' — 'avoid' providers are never routed by default."
+    "Tariffia Router — registry TEMPLATE / EXAMPLE.",
+    "This file is illustrative. It is NOT the shipped registry and nothing",
+    "loads it automatically.",
+    "",
+    "Schema: see src/core/config.ts (validateRegistryFile). A loadable registry",
+    "is { providers: [...] } and each provider follows the ProviderConfig shape:",
+    "  id, kind, baseUrl, apiKeyEnv, maxPrivacy, models[].",
+    "Keys are NEVER stored here — only the environment-variable NAME (apiKeyEnv).",
+    "",
+    "For the real, validated local registry see registry/ollama.json."
   ],
-  "defaultMode": "FREE_FIRST",
   "providers": [
     {
-      "id": "ollama",
+      "id": "example-openai-compat",
       "kind": "openai-compat",
-      "baseUrl": "http://127.0.0.1:11434/v1",
-      "apiKeyEnv": "OLLAMA_API_KEY",
-      "apiKeyOptional": true,
-      "maxPrivacy": "highly_confidential",
-      "toSrisk": "ok",
-      "models": [
-        {
-          "id": "qwen2.5-coder:7b",
-          "capabilities": ["text", "code", "json"],
-          "contextWindow": 32768,
-          "price": { "inPerMTok": 0, "outPerMTok": 0 },
-          "quality": 0.6
-        }
-      ]
-    },
-    {
-      "id": "groq",
-      "kind": "openai-compat",
-      "baseUrl": "https://api.groq.com/openai/v1",
-      "apiKeyEnv": "GROQ_API_KEY",
+      "baseUrl": "https://api.example.com/v1",
+      "apiKeyEnv": "EXAMPLE_API_KEY",
       "maxPrivacy": "internal",
-      "toSrisk": "ok",
-      "quota": { "requestsPerMinute": 30, "requestsPerDay": 1000 },
+      "summary": "EXAMPLE/UNVERIFIED placeholder. Replace before use.",
       "models": [
         {
-          "id": "REPLACE_WITH_CURRENT_FREE_MODEL_ID",
-          "capabilities": ["text", "code", "tools", "json"],
-          "contextWindow": 131072,
+          "id": "REPLACE_WITH_A_REAL_MODEL_ID",
+          "capabilities": ["text", "tools"],
+          "contextWindow": 8192,
           "price": { "inPerMTok": 0, "outPerMTok": 0 },
-          "quality": 0.75,
-          "note": "Verify the free tier and the model id against the provider's docs before use."
+          "note": "EXAMPLE/UNVERIFIED: capability, context and price are placeholders, not facts."
         }
       ]
     }

@@ -1,0 +1,51 @@
+{
+  "$comment": [
+    "Tariffia Router — Ollama provider registry.",
+    "This is a real, validated registry that can be loaded by the core.",
+    "Ollama runs locally; no credential is required (apiKeyOptional).",
+    "Prices are recorded explicitly as 0/0 because local inference has no",
+    "per-token cost. FREE_ONLY classifies a model as free ONLY from this",
+    "explicit 0/0 pricing, never from the provider or model name.",
+    "",
+    "No model is declared 'free' by omission: every model below carries an",
+    "explicit price of { inPerMTok: 0, outPerMTok: 0 }.",
+    "",
+    "Model entries are marked with \"unverified\": true where the model may not",
+    "be installed on a given machine. Ollama serves only models the user has",
+    "pulled, so a listed model is not guaranteed to be present. Replace these",
+    "with the models you actually have; the list is a starting point, not a",
+    "claim about your installation."
+  ],
+  "providers": [
+    {
+      "id": "ollama",
+      "kind": "openai-compat",
+      "baseUrl": "http://127.0.0.1:11434/v1",
+      "apiKeyEnv": "OLLAMA_API_KEY",
+      "apiKeyOptional": true,
+      "maxPrivacy": "highly_confidential",
+      "summary": "Local inference via Ollama. Private by construction: the bytes never leave the machine.",
+      "freeTierNote": "Local models; there is no provider billing. Zero marginal cost.",
+      "models": [
+        {
+          "id": "llama3.2",
+          "capabilities": ["text", "tools"],
+          "contextWindow": 131072,
+          "price": { "inPerMTok": 0, "outPerMTok": 0 },
+          "languages": { "*": 0.6 },
+          "note": "EXAMPLE/UNVERIFIED: only usable if this model has been pulled locally.",
+          "unverified": true
+        },
+        {
+          "id": "qwen2.5-coder:7b",
+          "capabilities": ["text", "code"],
+          "contextWindow": 32768,
+          "price": { "inPerMTok": 0, "outPerMTok": 0 },
+          "languages": { "*": 0.6 },
+          "note": "EXAMPLE/UNVERIFIED: only usable if this model has been pulled locally.",
+          "unverified": true
+        }
+      ]
+    }
+  ]
+}
