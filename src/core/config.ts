@@ -43,6 +43,41 @@ export const VALID_CAPABILITIES = new Set<string>([
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
+ * An environment-variable name: the only credential shape a registry may hold.
+ *
+ * A registry stores a *reference* to a credential (the name of the environment
+ * variable that will hold it), never the credential itself. The pattern is a
+ * standard shell identifier, which is what `process.env` keys are, and it is
+ * deliberately strict so a pasted key cannot masquerade as a variable name.
+ */
+const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/**
+ * Values that look like a secret rather than a variable name. Used only to give
+ * a clearer error when someone has pasted an actual key into `apiKeyEnv`.
+ */
+function looksLikeSecretValue(value: string): boolean {
+  return (
+    value.startsWith('sk-') ||
+    value.startsWith('Bearer ') ||
+    value.includes('-----BEGIN') ||
+    value.length > 64
+  );
+}
+
+function assertEnvName(value: unknown, where: string): void {
+  if (typeof value !== 'string' || !ENV_NAME.test(value)) {
+    const hint =
+      typeof value === 'string' && looksLikeSecretValue(value)
+        ? ' (this looks like a secret value; store only the environment-variable NAME, e.g. GROQ_API_KEY)'
+        : '';
+    throw new Error(
+      `registry: ${where} must be an environment-variable name (A-Z, 0-9, _), got ${JSON.stringify(value)}${hint}`,
+    );
+  }
+}
+
+/**
  * Validate a registry file.
  *
  * This runs before any key lookup on purpose: a typo in `capabilities` should
@@ -61,8 +96,26 @@ export function validateRegistryFile(raw: unknown): RegistryFile {
     if (!VALID_KINDS.has(p.kind)) {
       throw new Error(`registry: provider '${p.id}' has unknown kind '${p.kind}'`);
     }
-    if (!p.baseUrl) throw new Error(`registry: provider '${p.id}' has no baseUrl`);
+    if (typeof p.baseUrl !== 'string' || p.baseUrl.length === 0) {
+      throw new Error(`registry: provider '${p.id}' has no baseUrl`);
+    }
+    try {
+      const url = new URL(p.baseUrl);
+      if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+        throw new Error('not http(s)');
+      }
+    } catch {
+      // Covers a missing scheme (`api.example.com`), a `host:port` that parses
+      // as a non-http protocol, and anything else a bare string can be.
+      throw new Error(
+        `registry: provider '${p.id}' has an invalid baseUrl '${p.baseUrl}' (expected an http(s) URL)`,
+      );
+    }
     if (!p.apiKeyEnv) throw new Error(`registry: provider '${p.id}' has no apiKeyEnv`);
+    assertEnvName(p.apiKeyEnv, `provider '${p.id}' apiKeyEnv`);
+    if (p.accountIdEnv !== undefined) {
+      assertEnvName(p.accountIdEnv, `provider '${p.id}' accountIdEnv`);
+    }
     if (!p.maxPrivacy) throw new Error(`registry: provider '${p.id}' has no maxPrivacy`);
     if (!Array.isArray(p.models) || p.models.length === 0) {
       throw new Error(`registry: provider '${p.id}' has no models`);
@@ -123,8 +176,22 @@ export function validateRegistryFile(raw: unknown): RegistryFile {
       if (!Number.isFinite(m.contextWindow) || m.contextWindow <= 0) {
         throw new Error(`registry: ${p.id}/${m.id} has an invalid contextWindow`);
       }
-      if (!m.price || !Number.isFinite(m.price.inPerMTok) || !Number.isFinite(m.price.outPerMTok)) {
-        throw new Error(`registry: ${p.id}/${m.id} has an invalid price`);
+      // A valid price object is required and both numbers must be finite and
+      // non-negative. Missing or malformed pricing is rejected outright, which is
+      // what makes "not free" the only interpretation of an absent/invalid
+      // price: an entry can never be classified as free through omission.
+      if (
+        !m.price ||
+        typeof m.price !== 'object' ||
+        !Number.isFinite(m.price.inPerMTok) ||
+        !Number.isFinite(m.price.outPerMTok) ||
+        m.price.inPerMTok < 0 ||
+        m.price.outPerMTok < 0
+      ) {
+        throw new Error(
+          `registry: ${p.id}/${m.id} has an invalid price; ` +
+            `inPerMTok and outPerMTok must be finite, non-negative numbers (0 means free)`,
+        );
       }
       // Absent is allowed and means unrated. A present value still has to be a
       // real number in range: `quality: null` or `"0.8"` must not slip through

@@ -52,7 +52,11 @@ Modifications (MIT permits this; recorded for upstream tracking):
   route was added for Anthropic-compatible clients. The OpenAI-compatible route
   is unchanged.
 - `src/core/types.ts` — `'anthropic'` added to `ProviderKind`.
-- `src/core/config.ts` — `'anthropic'` added to the set of valid provider kinds.
+- `src/core/config.ts` — valid provider kinds now include `'anthropic'`; registry
+  validation was hardened: `apiKeyEnv`/`accountIdEnv` must be environment-variable
+  names (a pasted secret is rejected with a hint), `baseUrl` must be a valid
+  http(s) URL, and pricing must be finite and non-negative (missing/malformed
+  pricing is rejected rather than treated as free).
 - `src/core/index.ts` — exports the new `AnthropicAdapter`, the analyzer and the
   scorer.
 
