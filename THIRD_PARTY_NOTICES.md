@@ -28,12 +28,19 @@ src/core/providers/openai-compat.ts
 src/core/providers/gemini.ts
 ```
 
-Modifications (MIT permits this; recorded for upstream tracking): in
-`src/core/gateway.ts` the upstream `/setup` page route and the `/v1/keys` route
-were removed, together with their imports of `setup-ui.ts` and
-`validation-probe.ts` (both excluded from the approved import set). No routing
-logic was changed. All other imported files are byte-identical to the pinned
-upstream commit.
+Modifications (MIT permits this; recorded for upstream tracking):
+
+- `src/core/gateway.ts` — the upstream `/setup` page route and the `/v1/keys`
+  route were removed, together with their imports of `setup-ui.ts` and
+  `validation-probe.ts` (both excluded from the approved import set), and a
+  type-only `Registry` import was retained. No routing logic changed.
+- `src/core/mesh.ts` — a server-authoritative `FREE_ONLY` gate was added: an
+  `enforceFreeOnly` mesh option (default off), request sanitisation that drops a
+  pin to a non-free/unknown model and forces the free-only profile, a ranked
+  chain filter that removes non-free candidates, and a final execution-boundary
+  guard. No other routing or fallback behavior changed.
+
+All other imported files are byte-identical to the pinned upstream commit.
 
 Adapted tests imported into `tests/` (upstream tests with relative imports
 rewritten from `../src/...` to `../src/core/...`, and blocks that depend on

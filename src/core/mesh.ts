@@ -10,7 +10,7 @@ import { ConcurrencyLimiter, type Slot } from './concurrency.js';
 import { HealthTracker } from './health.js';
 import { QuotaLedger } from './ledger.js';
 import { Router } from './router.js';
-import { costOf, type Registry } from './registry.js';
+import { costOf, isFree, type Registry } from './registry.js';
 import { ProviderError, type Adapter, type FetchLike } from './providers/base.js';
 import { GeminiAdapter } from './providers/gemini.js';
 import { OpenAICompatAdapter } from './providers/openai-compat.js';
@@ -28,6 +28,14 @@ import {
   type ScoredCandidate,
   type Usage,
 } from './types.js';
+
+/**
+ * The profile a server-authoritative FREE_ONLY mesh forces every request
+ * through. InferenceMesh's built-in `free` profile is `freeOnly`, so routing
+ * to it rejects paid candidates before scoring. This name is a server constant,
+ * never something a request can influence.
+ */
+const FREE_ONLY_PROFILE = 'free';
 
 export interface MeshEvent {
   type: 'route' | 'attempt' | 'success' | 'failure' | 'exhausted';
@@ -58,6 +66,13 @@ export interface MeshOptions {
    */
   concurrencyWaitMs?: number;
   onEvent?: (e: MeshEvent) => void;
+  /**
+   * Server-authoritative FREE_ONLY mode. Set by the server from its own
+   * configuration; never derived from a request. When true, no request — pin or
+   * `mesh` routing extension included — can cause a non-free model to be
+   * executed. Defaults to false, so non-FREE_ONLY behavior is unchanged.
+   */
+  enforceFreeOnly?: boolean;
 }
 
 /**
@@ -252,6 +267,7 @@ export class InferenceMesh {
   private readonly maxAttempts: number;
   private readonly concurrencyWaitMs: number;
   private readonly onEvent: (e: MeshEvent) => void;
+  private readonly enforceFreeOnly: boolean;
 
   constructor(opts: MeshOptions) {
     this._registry = opts.registry;
@@ -264,6 +280,7 @@ export class InferenceMesh {
     this.maxAttempts = opts.maxAttempts ?? 4;
     this.concurrencyWaitMs = opts.concurrencyWaitMs ?? 30_000;
     this.onEvent = opts.onEvent ?? (() => {});
+    this.enforceFreeOnly = opts.enforceFreeOnly ?? false;
     this.adapters = opts.adapters ?? {
       'openai-compat': new OpenAICompatAdapter(),
       'workers-ai': new OpenAICompatAdapter(),
@@ -295,7 +312,55 @@ export class InferenceMesh {
 
   private routeFor(req: ChatRequest): RouteRequest {
     const parsed = parseModel(req.model);
-    return { ...parsed, ...(req.mesh ?? {}), ...(parsed.mesh ? { mesh: parsed.mesh } : {}) };
+    const merged: RouteRequest = {
+      ...parsed,
+      ...(req.mesh ?? {}),
+      ...(parsed.mesh ? { mesh: parsed.mesh } : {}),
+    };
+    if (!this.enforceFreeOnly) return merged;
+    return this.enforceFreeOnlyRoute(merged);
+  }
+
+  /**
+   * Server-authoritative FREE_ONLY enforcement for one request.
+   *
+   * The mode belongs to this mesh instance and is set by the server from its
+   * own configuration, so a request cannot opt out of it. A client cannot
+   * reach a paid model by pinning one or by sending routing overrides in
+   * `body.mesh`:
+   *
+   *   - a pin that names a paid or unknown model is dropped, so the request is
+   *     routed to an eligible free candidate instead of being rejected or
+   *     executed against the pinned one; and
+   *   - the profile is forced to the free-only profile, so a client-supplied
+   *     profile (for example `mesh/best`) cannot select a paid candidate.
+   *
+   * A pin that names a *free* model is kept: it is still subject to the
+   * router's privacy/capability/context filters and cannot select anything
+   * ineligible.
+   */
+  private enforceFreeOnlyRoute(req: RouteRequest): RouteRequest {
+    const next: RouteRequest = { ...req, mesh: FREE_ONLY_PROFILE };
+    if (next.pin) {
+      const candidate = this.registry.find(next.pin);
+      if (!candidate || !isFree(candidate.model)) delete next.pin;
+    }
+    return next;
+  }
+
+  /**
+   * Last line before execution: drop any non-free candidate from the ranked
+   * chain even if some other path produced it. Keeps the fallback walk from
+   * ever handing a paid candidate to an adapter while FREE_ONLY is active.
+   */
+  private enforceFreeOnlyDecision(decision: RouteDecision): RouteDecision {
+    const rejected = [...decision.rejected];
+    const ranked: ScoredCandidate[] = [];
+    for (const scored of decision.ranked) {
+      if (isFree(scored.candidate.model)) ranked.push(scored);
+      else rejected.push({ key: scored.candidate.key, reason: 'free_only: candidate is not free' });
+    }
+    return { ranked, rejected, profile: decision.profile };
   }
 
   async chat(req: ChatRequest, signal?: AbortSignal): Promise<ChatResponse> {
@@ -324,7 +389,8 @@ export class InferenceMesh {
     streaming: boolean,
   ): Promise<ChatResponse | StreamResult> {
     const routeReq = this.routeFor(req);
-    const decision = this.router.route(routeReq);
+    let decision = this.router.route(routeReq);
+    if (this.enforceFreeOnly) decision = this.enforceFreeOnlyDecision(decision);
     this.onEvent({ type: 'route', profile: decision.profile.name });
 
     if (decision.ranked.length === 0) {
@@ -415,6 +481,16 @@ export class InferenceMesh {
     const key = candidate.key;
     const { attempts } = ctx;
     let handedOff = false;
+
+    // Server-authoritative FREE_ONLY hard stop at the execution boundary. The
+    // routing layer above already filters free-only, so this should never fire;
+    // if it ever does, a paid candidate is skipped rather than executed.
+    if (this.enforceFreeOnly && !isFree(candidate.model)) {
+      const reason = 'free_only: candidate is not free';
+      attempts.push({ key, error: reason, ms: 0 });
+      this.onEvent({ type: 'attempt', key, error: reason });
+      return undefined;
+    }
 
     // Two layers of window budget, reserved outermost first: the credential's
     // own, then this model's. Everything reserved is tracked so a rejection at
