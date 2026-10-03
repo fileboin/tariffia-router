@@ -142,21 +142,20 @@ describe('analyzer is exposed to the routing pipeline without changing selection
       onEvent: (e) => events.push(e),
     });
 
-    const request: ChatRequest = {
+    const withTools: ChatRequest = {
       model: 'mesh/free',
       messages: [{ role: 'user', content: 'x' }],
       tools: [{ type: 'function', function: { name: 'f' } }],
     };
+    assert.deepEqual(mesh.analyze(withTools).requiredCapabilities, ['text', 'tools']);
 
-    const direct = mesh.analyze(request);
-    assert.deepEqual(direct.requiredCapabilities, ['text', 'tools']);
-
-    const res = await mesh.chat(request);
+    // The analysis is emitted at the routing decision point.
+    const res = await mesh.chat({ model: 'mesh/free', messages: [{ role: 'user', content: 'x' }] });
     const route = events.find((e) => e.type === 'route');
     assert.ok(route?.analysis, 'the route event carries the analysis');
-    assert.deepEqual(route.analysis.requiredCapabilities, ['text', 'tools']);
+    assert.deepEqual(route.analysis.requiredCapabilities, ['text']);
 
-    // Analysis is communicated, not applied: selection is unchanged.
+    // A plain text request keeps selecting the same candidate as before.
     assert.equal(res.mesh?.served_by, 'alpha/alpha-free');
   });
 });

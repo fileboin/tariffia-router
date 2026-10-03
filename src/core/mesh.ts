@@ -20,6 +20,7 @@ import { redact, restore } from './redact.js';
 import {
   MeshError,
   NoCandidateError,
+  type Capability,
   type ChatMessage,
   type ChatRequest,
   type ChatResponse,
@@ -38,6 +39,19 @@ import {
  * never something a request can influence.
  */
 const FREE_ONLY_PROFILE = 'free';
+
+/**
+ * Merge the analyzer's required capabilities into the request's own, without
+ * duplicates. A candidate must satisfy every capability in the union; a
+ * capability the request itself declared is kept, because that is a filter the
+ * caller already asked for.
+ */
+function withRequiredCapabilities(req: RouteRequest, required: Capability[]): RouteRequest {
+  if (required.length === 0) return req;
+  const merged: Capability[] = [...(req.capabilities ?? [])];
+  for (const cap of required) if (!merged.includes(cap)) merged.push(cap);
+  return { ...req, capabilities: merged };
+}
 
 export interface MeshEvent {
   type: 'route' | 'attempt' | 'success' | 'failure' | 'exhausted';
@@ -402,13 +416,20 @@ export class InferenceMesh {
     streaming: boolean,
   ): Promise<ChatResponse | StreamResult> {
     const routeReq = this.routeFor(req);
-    let decision = this.router.route(routeReq);
+    const analysis = analyzeRequest(req);
+    // Capability-aware filtering runs before scoring: a candidate that cannot
+    // satisfy a capability the request needs is not a worse choice, it is not a
+    // choice. This never downgrades a requirement — the union is a hard filter.
+    const capabilityReq = withRequiredCapabilities(routeReq, analysis.requiredCapabilities);
+    let decision = this.router.route(capabilityReq);
     if (this.enforceFreeOnly) decision = this.enforceFreeOnlyDecision(decision);
-    this.onEvent({ type: 'route', profile: decision.profile.name, analysis: analyzeRequest(req) });
+    this.onEvent({ type: 'route', profile: decision.profile.name, analysis });
 
     if (decision.ranked.length === 0) {
+      const required = analysis.requiredCapabilities;
+      const capNote = required.length > 1 ? ` Required capabilities: ${required.join(', ')}.` : '';
       throw new NoCandidateError(
-        `no provider satisfies this request (profile '${decision.profile.name}'). ` +
+        `no provider satisfies this request (profile '${decision.profile.name}').${capNote} ` +
           `${this.registry.candidates.length} candidates in registry, all rejected.`,
         decision.rejected,
       );

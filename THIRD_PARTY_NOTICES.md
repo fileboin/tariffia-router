@@ -38,9 +38,10 @@ Modifications (MIT permits this; recorded for upstream tracking):
   `enforceFreeOnly` mesh option (default off), request sanitisation that drops a
   pin to a non-free/unknown model and forces the free-only profile, a ranked
   chain filter that removes non-free candidates, and a final execution-boundary
-  guard. The default adapter map also registers the new `anthropic` adapter, and
-  the `route` event now carries the deterministic task analysis (informational
-  only; selection is unchanged). No other routing or fallback behavior changed.
+  guard. The default adapter map also registers the new `anthropic` adapter, the
+  `route` event carries the deterministic task analysis, and the analyzer's
+  `requiredCapabilities` are merged into the request's capabilities as a hard
+  pre-scoring filter. No other routing or fallback behavior changed.
 - `src/core/gateway.ts` — in addition to the removals above, a `POST /v1/messages`
   route was added for Anthropic-compatible clients. The OpenAI-compatible route
   is unchanged.
