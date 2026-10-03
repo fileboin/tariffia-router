@@ -43,8 +43,11 @@ Modifications (MIT permits this; recorded for upstream tracking):
   `requiredCapabilities` are merged into the request's capabilities as a hard
   pre-scoring filter. The candidate ranking step now delegates to the new
   explainable scorer (`src/core/scorer.ts`), preserving the existing scoring
-  signals, weights and deterministic tie-break. No other routing or fallback
-  behavior changed.
+  signals, weights and deterministic tie-break. Fallback execution gained an
+  explicit per-request dedupe and an execution-boundary guard that repeats the
+  FREE_ONLY/privacy/capability hard filters (and rejects unknown adapter kinds)
+  immediately before any adapter call; no ranking, fallback strategy, retry
+  classification or pin behavior changed.
 - `src/core/gateway.ts` — in addition to the removals above, a `POST /v1/messages`
   route was added for Anthropic-compatible clients. The OpenAI-compatible route
   is unchanged.

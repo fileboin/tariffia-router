@@ -11,7 +11,7 @@ import { ConcurrencyLimiter, type Slot } from './concurrency.js';
 import { HealthTracker } from './health.js';
 import { QuotaLedger } from './ledger.js';
 import { Router } from './router.js';
-import { costOf, isFree, type Registry } from './registry.js';
+import { costOf, hasCapabilities, isFree, maxPrivacyOf, servesPrivacy, type Registry } from './registry.js';
 import { ProviderError, type Adapter, type FetchLike } from './providers/base.js';
 import { AnthropicAdapter } from './providers/anthropic.js';
 import { GeminiAdapter } from './providers/gemini.js';
@@ -24,6 +24,7 @@ import {
   type ChatMessage,
   type ChatRequest,
   type ChatResponse,
+  type PrivacyLevel,
   type MeshTrace,
   type Quota,
   type RouteDecision,
@@ -65,6 +66,14 @@ export interface MeshEvent {
   /** Deterministic task analysis for this request. Present on the 'route' event. */
   analysis?: TaskRequirements;
 }
+
+/*
+ * Execution-boundary guards (see InferenceMesh.guardReason). They repeat, at the
+ * last moment before an adapter, the hard filters the routing layer already
+ * applied, and fail closed: a candidate that cannot be proven eligible is
+ * skipped, never executed. The guard returns a `code: reason` string, or null
+ * when the candidate is eligible.
+ */
 
 export interface MeshOptions {
   registry: Registry;
@@ -260,6 +269,9 @@ interface AttemptContext {
   signal: AbortSignal | undefined;
   streaming: boolean;
   decision: RouteDecision;
+  /** Hard filters repeated at the execution boundary, from the routing request. */
+  requiredCapabilities: Capability[];
+  privacy: PrivacyLevel;
   estimated: number;
   attempts: MeshTrace['attempts'];
   started: number;
@@ -444,14 +456,28 @@ export class InferenceMesh {
       signal,
       streaming,
       decision,
+      requiredCapabilities: capabilityReq.capabilities ?? [],
+      privacy: routeReq.privacy ?? 'public',
       estimated: routeReq.estimatedTokens ?? estimateTokens(req),
       attempts: [],
       started: Date.now(),
       reached: false,
     };
     const saturated: ScoredCandidate[] = [];
+    // One shot per candidate per request. The ranked chain is already unique by
+    // construction, but this keeps "never retry the same candidate" true even
+    // if a future ranking change ever repeats one.
+    const tried = new Set<string>();
 
     for (const scored of decision.ranked.slice(0, this.maxAttempts)) {
+      if (tried.has(scored.candidate.key)) {
+        const reason = 'already attempted this request';
+        ctx.attempts.push({ key: scored.candidate.key, error: reason, ms: 0 });
+        this.onEvent({ type: 'attempt', key: scored.candidate.key, error: reason });
+        continue;
+      }
+      tried.add(scored.candidate.key);
+
       const { provider, key } = scored.candidate;
       // A busy provider is a reason to try somebody else, not a reason to wait.
       // Queueing here would spend the fallback chain's whole point on patience.
@@ -501,6 +527,47 @@ export class InferenceMesh {
   }
 
   /**
+   * The execution-boundary guard.
+   *
+   * Routing already applied the capability, privacy and FREE_ONLY hard filters,
+   * so on a correct chain this returns null for every candidate. It exists so
+   * those guarantees do not depend on the routing layer staying correct: even if
+   * a future ranking or filter change accidentally returns a candidate that
+   * violates one of them, it is skipped here rather than handed to an adapter.
+   *
+   * Returns a `code: reason` string when the candidate must not be executed, or
+   * null when it is eligible. There is no other kind of answer: unknown kinds
+   * and unprovable eligibility both fail closed.
+   */
+  private guardReason(scored: ScoredCandidate, ctx: AttemptContext): string | null {
+    const { candidate } = scored;
+
+    // FREE_ONLY: a non-free model must never reach an adapter. Checked first
+    // because it is the hard safety guarantee.
+    if (this.enforceFreeOnly && !isFree(candidate.model)) {
+      return 'free_only: candidate is not free';
+    }
+
+    // Privacy: the model must serve at least the request's sensitivity.
+    if (!servesPrivacy(candidate, ctx.privacy)) {
+      return `privacy: needs ${ctx.privacy}, serves up to ${maxPrivacyOf(candidate)}`;
+    }
+
+    // Capability: every required capability must be present.
+    if (!hasCapabilities(candidate.model, ctx.requiredCapabilities)) {
+      const missing = ctx.requiredCapabilities.filter((c) => !candidate.model.capabilities.includes(c));
+      return `capability: missing ${missing.join(',')}`;
+    }
+
+    // Adapter: an unknown provider kind cannot be executed.
+    if (!this.adapters[candidate.provider.kind]) {
+      return `unknown_adapter: no adapter for kind '${candidate.provider.kind}'`;
+    }
+
+    return null;
+  }
+
+  /**
    * One candidate, one slot, one shot.
    *
    * Returns the answer, or undefined to mean "keep walking the chain". Throws
@@ -520,13 +587,12 @@ export class InferenceMesh {
     const { attempts } = ctx;
     let handedOff = false;
 
-    // Server-authoritative FREE_ONLY hard stop at the execution boundary. The
-    // routing layer above already filters free-only, so this should never fire;
-    // if it ever does, a paid candidate is skipped rather than executed.
-    if (this.enforceFreeOnly && !isFree(candidate.model)) {
-      const reason = 'free_only: candidate is not free';
-      attempts.push({ key, error: reason, ms: 0 });
-      this.onEvent({ type: 'attempt', key, error: reason });
+    // Execution-boundary guards. See guardReason() — they repeat the hard
+    // filters and always fail closed.
+    const guard = this.guardReason(scored, ctx);
+    if (guard) {
+      attempts.push({ key, error: guard, ms: 0 });
+      this.onEvent({ type: 'attempt', key, error: guard });
       return undefined;
     }
 
@@ -566,12 +632,15 @@ export class InferenceMesh {
       }
       reserved.push(key);
 
-      const adapter = this.adapters[candidate.provider.kind];
-      if (!adapter) {
+      if (!this.adapters[candidate.provider.kind]) {
+        // Already reported by the guard; kept as a backstop only.
         await giveBack();
-        attempts.push({ key, error: `no adapter for kind '${candidate.provider.kind}'`, ms: 0 });
+        const reason = `unknown_adapter: no adapter for kind '${candidate.provider.kind}'`;
+        attempts.push({ key, error: reason, ms: 0 });
+        this.onEvent({ type: 'attempt', key, error: reason });
         return undefined;
       }
+      const adapter = this.adapters[candidate.provider.kind] as Adapter;
 
       const attempt = combineSignals(this.timeoutMs, ctx.signal);
       const t0 = Date.now();
