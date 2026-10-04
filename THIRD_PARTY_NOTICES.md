@@ -74,11 +74,20 @@ Modifications (MIT permits this; recorded for upstream tracking):
   ones; `routeFor` drops a client pin to a paid model under FREE_FIRST so it
   cannot force paid-first behavior. Scoring, retry and adapter behavior unchanged.
 
+## Seed data (candidate data, not imported code)
+
+- **awesome-free-llm-apis** — https://github.com/mnfst/awesome-free-llm-apis —
+  licence **CC0-1.0** (public domain). `seed/awesome-free-llm-apis.data.json`
+  (`data.json`, retrieved 2026-10-04, SHA-256
+  `84f4479125c52aa5569939dd5908fd4fb9fabdf2df99b78c82fe79b8e28ef693`, upstream
+  `lastUpdated` 2026-08-21). Stored separately from the active registry as
+  candidate data; it is never loaded by the router. See `seed/README.md`.
+
 New Tariffia files (not derived from upstream; own MIT-licensed code):
 `src/core/analyzer.ts`, `src/core/scorer.ts`,
 `src/core/providers/anthropic.ts`, `src/core/providers/anthropic-wire.ts`,
-`src/routing-mode.ts`, `src/mode-mesh.ts`, `src/catalog-reader.ts`, and
-`src/catalog-sync.ts`.
+`src/routing-mode.ts`, `src/mode-mesh.ts`, `src/catalog-reader.ts`,
+`src/catalog-sync.ts`, and `src/seed-import.ts`.
 
 All other imported files are byte-identical to the pinned upstream commit.
 
