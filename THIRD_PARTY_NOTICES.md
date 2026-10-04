@@ -91,7 +91,8 @@ New Tariffia files (not derived from upstream; own MIT-licensed code):
 `src/candidate-review.ts`, `src/candidate-probe.ts`,
 `src/free-status-evidence.ts`, `src/activation-gate.ts`,
 `src/provider-builder.ts`, `src/registry-merge.ts`,
-`src/provider-activation.ts`, and `src/catalog-ingest.ts`.
+`src/provider-activation.ts`, `src/catalog-ingest.ts`, and
+`src/verification-queue.ts`.
 
 All other imported files are byte-identical to the pinned upstream commit.
 
