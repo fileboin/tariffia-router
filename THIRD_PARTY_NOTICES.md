@@ -59,10 +59,14 @@ Modifications (MIT permits this; recorded for upstream tracking):
   pricing is rejected rather than treated as free).
 - `src/core/index.ts` — exports the new `AnthropicAdapter`, the analyzer and the
   scorer.
+- `src/core/registry.ts` — added a `withProfiles()` copy method (keeps loaded
+  providers/credentials, overlays profiles/default) for the Tariffia mode layer.
+  Routing/scoring helpers unchanged.
 
 New Tariffia files (not derived from upstream; own MIT-licensed code):
-`src/core/analyzer.ts`, `src/core/scorer.ts`, `src/core/providers/anthropic.ts`
-and `src/core/providers/anthropic-wire.ts`.
+`src/core/analyzer.ts`, `src/core/scorer.ts`,
+`src/core/providers/anthropic.ts`, `src/core/providers/anthropic-wire.ts`,
+`src/routing-mode.ts`, and `src/mode-mesh.ts`.
 
 All other imported files are byte-identical to the pinned upstream commit.
 

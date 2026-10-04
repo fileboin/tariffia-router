@@ -166,6 +166,31 @@ export class Registry {
   find(key: string): Candidate | undefined {
     return this.candidates.find((c) => c.key === key);
   }
+
+  /**
+   * A copy of this registry with extra profiles and/or a different default
+   * profile, keeping the providers, candidates, credentials and warnings
+   * already loaded. Used by the Tariffia mode layer to apply a server-owned
+   * routing preset without rebuilding (and re-resolving) the provider set.
+   *
+   * Tariffia addition (2026-10-03). See THIRD_PARTY_NOTICES.md.
+   */
+  withProfiles(profiles: Record<string, MeshProfile>, defaultProfile?: string): Registry {
+    const clone: Registry = Object.create(Registry.prototype);
+    (clone as { profiles: Record<string, MeshProfile> }).profiles = { ...this.profiles, ...profiles };
+    (clone as { defaultProfile: string }).defaultProfile = defaultProfile ?? this.defaultProfile;
+    (clone as { providers: ProviderConfig[] }).providers = this.providers;
+    (clone as { candidates: Candidate[] }).candidates = this.candidates;
+    (clone as { warnings: LoadWarning[] }).warnings = this.warnings;
+    // Carry the loaded credentials so a provider lookup after the clone still
+    // resolves the same key it resolved before.
+    (clone as unknown as { keys: Map<string, string> }).keys = this.keys;
+    (clone as unknown as { accountIds: Map<string, string> }).accountIds = this.accountIds;
+    if (!clone.profiles[clone.defaultProfile]) {
+      throw new Error(`default profile '${clone.defaultProfile}' is not defined`);
+    }
+    return clone;
+  }
 }
 
 /* -------------------------------------------------------------------------- */
