@@ -43,6 +43,12 @@ export interface ScoreWeights {
   capabilityFit?: number;
   contextFit?: number;
   outputFit?: number;
+  /**
+   * Rewards candidates with more remaining quota (headroom). Optional; when the
+   * profile does not set it, a small fixed default is used. Zero effect when no
+   * headroom signal is supplied (every candidate scores 1).
+   */
+  headroom?: number;
 }
 
 /** One candidate plus every pre-computed signal the scorer needs. */
@@ -65,6 +71,12 @@ export interface RankingInput {
   requiredCapabilities: Capability[];
   minContext?: number;
   maxOutputTokens?: number;
+  /**
+   * Remaining quota headroom, 0..1 (1 = full, 0 = exhausted), when known.
+   * Absent means unknown and is treated as 1 (no effect), so scoring is
+   * unchanged until a caller supplies quota state.
+   */
+  headroom?: number;
 }
 
 /**
@@ -72,7 +84,7 @@ export interface RankingInput {
  * purpose: fit breaks ties and orders candidates that differ in fit, but it must
  * not dominate quality or cost, which are the caller's stated intent.
  */
-const DEFAULT_FIT_WEIGHTS = { capabilityFit: 0.1, contextFit: 0.1, outputFit: 0.1 } as const;
+const DEFAULT_FIT_WEIGHTS = { capabilityFit: 0.1, contextFit: 0.1, outputFit: 0.1, headroom: 0.1 } as const;
 
 /**
  * How much better an untried candidate is assumed to be than the best measured
@@ -89,9 +101,10 @@ export function scoreCandidate(input: RankingInput, weights: ScoreWeights): Scor
   const wCap = weights.capabilityFit ?? DEFAULT_FIT_WEIGHTS.capabilityFit;
   const wCtx = weights.contextFit ?? DEFAULT_FIT_WEIGHTS.contextFit;
   const wOut = weights.outputFit ?? DEFAULT_FIT_WEIGHTS.outputFit;
+  const wHead = weights.headroom ?? DEFAULT_FIT_WEIGHTS.headroom;
   const wRel = weights.reliability ?? 0;
   const wsum =
-    weights.quality + weights.cost + weights.latency + weights.language + wRel + wCap + wCtx + wOut || 1;
+    weights.quality + weights.cost + weights.latency + weights.language + wRel + wCap + wCtx + wOut + wHead || 1;
 
   const model = input.candidate.model;
   const caps = model.capabilities;
@@ -123,6 +136,9 @@ export function scoreCandidate(input: RankingInput, weights: ScoreWeights): Scor
 
   const qualityTerm = input.quality;
   const languageTerm = input.languageFit;
+  // Remaining quota headroom; unknown = full (1), so an absent signal cannot
+  // reorder a pool. Steers away from a candidate near its rate cap.
+  const headroomTerm = input.headroom === undefined ? 1 : clamp01(input.headroom);
 
   const component = (key: ScoreComponent['key'], value: number, weight: number, reason: string): ScoreComponent => ({
     key,
@@ -168,6 +184,12 @@ export function scoreCandidate(input: RankingInput, weights: ScoreWeights): Scor
       wRel,
       input.untried ? 'untried, scored optimistically' : `observed success rate ${input.successRate ?? 'n/a'}`,
     ),
+    component(
+      'headroom',
+      headroomTerm,
+      wHead,
+      input.headroom === undefined ? 'quota headroom unknown' : `quota headroom ${headroomTerm}`,
+    ),
   ];
 
   const score = components.reduce((sum, c) => sum + c.contribution, 0);
@@ -180,7 +202,9 @@ export function scoreCandidate(input: RankingInput, weights: ScoreWeights): Scor
     capabilityFit,
     contextFit,
     outputFit,
+    headroom: headroomTerm,
   };
+  void wsum;
 
   return { candidate: input.candidate, score, terms, components };
 }

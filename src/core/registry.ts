@@ -232,6 +232,17 @@ export class Registry {
  * A single number is needed for ranking; the 3:1 mix is a chat-shaped guess and
  * is documented rather than hidden because it decides which model is "cheaper".
  */
+/**
+ * The shared quota-pool key for a provider: an explicit `quotaPool` when set,
+ * otherwise the provider id. Models behind one credential/account should share
+ * this key so their usage is counted once.
+ *
+ * Tariffia addition (2026-10-04). See THIRD_PARTY_NOTICES.md.
+ */
+export function quotaPoolKey(provider: ProviderConfig): string {
+  return provider.quotaPool && provider.quotaPool.trim().length > 0 ? provider.quotaPool : provider.id;
+}
+
 export function blendedPrice(model: ModelEntry): number {
   return model.price.inPerMTok * 0.75 + model.price.outPerMTok * 0.25;
 }

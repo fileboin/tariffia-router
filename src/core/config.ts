@@ -119,6 +119,9 @@ export function validateRegistryFile(raw: unknown): RegistryFile {
     if (p.accountIdEnv !== undefined) {
       assertEnvName(p.accountIdEnv, `provider '${p.id}' accountIdEnv`);
     }
+    if (p.quotaPool !== undefined && (typeof p.quotaPool !== 'string' || p.quotaPool.trim().length === 0)) {
+      throw new Error(`registry: provider '${p.id}' has an empty quotaPool; omit it or give a non-empty key`);
+    }
     if (!p.maxPrivacy) throw new Error(`registry: provider '${p.id}' has no maxPrivacy`);
     if (p.risk !== undefined && !VALID_RISK.has(p.risk)) {
       throw new Error(

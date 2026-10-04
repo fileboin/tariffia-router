@@ -21,6 +21,12 @@ import type { Quota } from './types.js';
 export interface LedgerRecord {
   /** Epoch-ms timestamps of recent requests, used for the rolling minute. */
   recent: number[];
+  /**
+   * Tokens attributed to the rolling minute: `{ ts, tokens }` per booking. A
+   * request reserves its estimated tokens at admission and, on success, real
+   * tokens are booked here (and to the day). Pruned to the last 60s.
+   */
+  recentTokens: Array<{ ts: number; tokens: number }>;
   /** UTC day key, 'YYYY-MM-DD'. */
   day: string;
   dayRequests: number;
@@ -102,9 +108,11 @@ export class QuotaLedger {
     const day = utcDayKey(now);
     let rec = state[key];
     if (!rec) {
-      rec = { recent: [], day, dayRequests: 0, dayTokens: 0 };
+      rec = { recent: [], recentTokens: [], day, dayRequests: 0, dayTokens: 0 };
       state[key] = rec;
     }
+    // Defensive: a record loaded from older storage may lack recentTokens.
+    if (!Array.isArray(rec.recentTokens)) rec.recentTokens = [];
     if (rec.day !== day) {
       // New UTC day: daily counters reset, the rolling minute does not.
       rec.day = day;
@@ -112,7 +120,15 @@ export class QuotaLedger {
       rec.dayTokens = 0;
     }
     rec.recent = rec.recent.filter((t) => now - t < 60_000);
+    rec.recentTokens = rec.recentTokens.filter((e) => now - e.ts < 60_000);
     return rec;
+  }
+
+  /** Tokens attributed to the rolling minute. */
+  private minuteTokens(rec: LedgerRecord): number {
+    let total = 0;
+    for (const e of rec.recentTokens) total += e.tokens;
+    return total;
   }
 
   /**
@@ -136,6 +152,12 @@ export class QuotaLedger {
         return { ok: false, reason: `rpd ${rec.dayRequests}/${quota.requestsPerDay}` };
       }
       if (
+        quota.tokensPerMinute !== undefined &&
+        this.minuteTokens(rec) + estimatedTokens > quota.tokensPerMinute
+      ) {
+        return { ok: false, reason: `tpm ${this.minuteTokens(rec)}/${quota.tokensPerMinute}` };
+      }
+      if (
         quota.tokensPerDay !== undefined &&
         rec.dayTokens + estimatedTokens > quota.tokensPerDay
       ) {
@@ -144,6 +166,10 @@ export class QuotaLedger {
     }
 
     rec.recent.push(now);
+    // Reserve the estimated tokens in the rolling minute so concurrent callers
+    // cannot both slip past the last TPM slot. `record` replaces/extends this
+    // with real usage; `refund` removes it.
+    rec.recentTokens.push({ ts: now, tokens: estimatedTokens });
     rec.dayRequests += 1;
     this.dirty = true;
     return { ok: true };
@@ -155,17 +181,43 @@ export class QuotaLedger {
     const rec = state[key];
     if (!rec) return;
     rec.recent.pop();
+    // Drop the admission's minute-token reservation (the last one added).
+    if (Array.isArray(rec.recentTokens) && rec.recentTokens.length > 0) rec.recentTokens.pop();
     rec.dayRequests = Math.max(0, rec.dayRequests - 1);
     this.dirty = true;
   }
 
-  /** Book real token usage after a successful call. */
+  /**
+   * Book real token usage after a successful call, replacing the admission's
+   * estimated minute reservation with the actual tokens.
+   */
   async record(key: string, totalTokens: number): Promise<void> {
     const now = this.now();
     const state = await this.ensure();
     const rec = this.entry(state, key, now);
+    // Replace the provisional minute reservation (estimated) with real usage so
+    // the rolling minute is not double-counted.
+    if (Array.isArray(rec.recentTokens) && rec.recentTokens.length > 0) rec.recentTokens.pop();
+    rec.recentTokens.push({ ts: now, tokens: totalTokens });
     rec.dayTokens += totalTokens;
     this.dirty = true;
+  }
+
+  /**
+   * Fraction of quota consumed in the rolling minute and UTC day, 0..1, or
+   * `undefined` when no quota is known. Used as a graded headroom signal.
+   */
+  async utilization(key: string, quota: Quota | undefined): Promise<{ minute?: number; day?: number }> {
+    if (!quota) return {};
+    const now = this.now();
+    const state = await this.ensure();
+    const rec = this.entry(state, key, now);
+    const out: { minute?: number; day?: number } = {};
+    const minuteMax = quota.tokensPerMinute;
+    if (minuteMax && minuteMax > 0) out.minute = this.minuteTokens(rec) / minuteMax;
+    const dayMax = quota.tokensPerDay;
+    if (dayMax && dayMax > 0) out.day = rec.dayTokens / dayMax;
+    return out;
   }
 
   async snapshot(): Promise<Record<string, LedgerRecord>> {

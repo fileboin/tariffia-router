@@ -46,6 +46,8 @@ export interface Quota {
   requestsPerMinute?: number;
   /** Hard cap on requests inside a calendar day (UTC). */
   requestsPerDay?: number;
+  /** Hard cap on total tokens inside a rolling minute. */
+  tokensPerMinute?: number;
   /** Hard cap on total tokens inside a calendar day (UTC). */
   tokensPerDay?: number;
 }
@@ -258,6 +260,16 @@ export interface ProviderConfig {
    * checked.
    */
   riskVerifiedAt?: string;
+  /**
+   * Shared quota-pool key. Providers (or provider entries) that draw on the SAME
+   * account/free pool (e.g. one OpenRouter account, one NVIDIA NIM key) should
+   * carry the same `quotaPool`, so their requests are counted against ONE budget
+   * instead of being double-counted per model. Absent falls back to the provider
+   * id, so behavior is unchanged when it is not set. Never inferred.
+   *
+   * Tariffia addition (2026-10-04). See THIRD_PARTY_NOTICES.md.
+   */
+  quotaPool?: string;
   models: ModelEntry[];
   disabled?: boolean;
 }
@@ -347,7 +359,8 @@ export interface ScoreComponent {
     | 'quality'
     | 'latency'
     | 'language'
-    | 'availability';
+    | 'availability'
+    | 'headroom';
   /** Normalised signal value, 0..1. */
   value: number;
   /** Weight applied to this component. */

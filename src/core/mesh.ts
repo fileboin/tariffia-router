@@ -12,7 +12,7 @@ import { ConcurrencyLimiter, type Slot } from './concurrency.js';
 import { HealthTracker } from './health.js';
 import { QuotaLedger } from './ledger.js';
 import { Router } from './router.js';
-import { costOf, hasCapabilities, isFree, maxPrivacyOf, servesPrivacy, type Registry } from './registry.js';
+import { costOf, hasCapabilities, isFree, maxPrivacyOf, quotaPoolKey, servesPrivacy, type Registry } from './registry.js';
 import { ProviderError, type Adapter, type FetchLike } from './providers/base.js';
 import { AnthropicAdapter } from './providers/anthropic.js';
 import { GeminiAdapter } from './providers/gemini.js';
@@ -336,6 +336,13 @@ export class InferenceMesh {
   private readonly freeFirst: boolean;
   private readonly allowAvoidRiskProviders: boolean;
   private readonly claudeFamilyPolicy: ClaudeFamilyPolicy;
+  /**
+   * Synchronous snapshot of remaining quota headroom (0..1) per ledger key,
+   * refreshed after each adm admission/record from the ledger's utilization.
+   * Kept synchronous so the Router's scoring stays pure; absent entries mean
+   * "unknown" (headroom 1, no effect).
+   */
+  private readonly headroom = new Map<string, number>();
 
   constructor(opts: MeshOptions) {
     // Apply the risk filter first, at construction, so an `avoid` provider is
@@ -344,7 +351,10 @@ export class InferenceMesh {
     this.ledger = opts.ledger ?? new QuotaLedger();
     this.health = opts.health ?? new HealthTracker();
     this.limits = opts.limiter ?? new ConcurrencyLimiter();
-    this._router = new Router(this._registry, { health: this.health });
+    this._router = new Router(this._registry, {
+      health: this.health,
+      headroom: (key) => this.headroom.get(key),
+    });
     this.fetchImpl = opts.fetchImpl ?? ((input, init) => fetch(input, init));
     this.timeoutMs = opts.timeoutMs ?? 60_000;
     this.maxAttempts = opts.maxAttempts ?? 4;
@@ -392,7 +402,10 @@ export class InferenceMesh {
     // `avoid` provider that construction-time filtering removed.
     const filtered = registry.withoutAvoidRisk(this.allowAvoidRiskProviders);
     this._registry = filtered;
-    this._router = new Router(filtered, { health: this.health });
+    this._router = new Router(filtered, {
+      health: this.health,
+      headroom: (key) => this.headroom.get(key),
+    });
   }
 
   private routeFor(req: ChatRequest): RouteRequest {
@@ -643,6 +656,25 @@ export class InferenceMesh {
    * null when it is eligible. There is no other kind of answer: unknown kinds
    * and unprovable eligibility both fail closed.
    */
+  /**
+   * Refresh the synchronous headroom snapshot for a ledger key from its quota.
+   * Headroom = 1 - max(minute, day) utilization. Unknown quota leaves it at 1.
+   * Best-effort and non-blocking; scoring reads only the map.
+   */
+  private async refreshHeadroom(key: string, quota: Quota | undefined): Promise<void> {
+    if (!quota) {
+      this.headroom.set(key, 1);
+      return;
+    }
+    try {
+      const u = await this.ledger.utilization(key, quota);
+      const maxUse = Math.max(u.minute ?? 0, u.day ?? 0);
+      this.headroom.set(key, maxUse >= 1 ? 0 : 1 - maxUse);
+    } catch {
+      // A snapshot failure must never affect routing; leave the last value.
+    }
+  }
+
   private guardReason(scored: ScoredCandidate, ctx: AttemptContext): string | null {
     const { candidate } = scored;
 
@@ -712,9 +744,12 @@ export class InferenceMesh {
 
     try {
       const providerQuota = candidate.provider.quota;
+      // The account-wide layer is keyed by the shared quota pool, so models
+      // behind one credential/account draw on the same budget.
+      const poolKey = quotaPoolKey(candidate.provider);
       if (providerQuota) {
         const admittedProvider = await this.ledger.admit(
-          candidate.provider.id,
+          poolKey,
           providerQuota,
           ctx.estimated,
         );
@@ -724,7 +759,8 @@ export class InferenceMesh {
           this.onEvent({ type: 'attempt', key, error: reason });
           return undefined;
         }
-        reserved.push(candidate.provider.id);
+        reserved.push(poolKey);
+        void this.refreshHeadroom(poolKey, providerQuota);
       }
 
       const admitted = await this.ledger.admit(key, candidate.model.quota, ctx.estimated);
@@ -735,6 +771,7 @@ export class InferenceMesh {
         return undefined;
       }
       reserved.push(key);
+      void this.refreshHeadroom(key, candidate.model.quota);
 
       if (!this.adapters[candidate.provider.kind]) {
         // Already reported by the guard; kept as a backstop only.
@@ -803,7 +840,7 @@ export class InferenceMesh {
           // does; booking only one of them lets a tokensPerDay on the provider
           // sit at zero forever.
           if (candidate.provider.quota) {
-            await this.ledger.record(candidate.provider.id, usage.total_tokens);
+            await this.ledger.record(poolKey, usage.total_tokens);
           }
         }
         await this.ledger.flush();
@@ -852,13 +889,14 @@ export class InferenceMesh {
     candidate: {
       key: string;
       model: { price: { inPerMTok: number; outPerMTok: number } };
-      provider: { id: string; quota?: Quota };
+      provider: { id: string; quota?: Quota; quotaPool?: string };
     },
     trace: MeshTrace,
     done: () => void,
   ): ReadableStream<Uint8Array> {
     const decoder = new TextDecoder();
     const ledger = this.ledger;
+    const poolKey = quotaPoolKey(candidate.provider as { id: string; quotaPool?: string } as never);
     const onEvent = this.onEvent;
     const model = candidate.model as unknown as Parameters<typeof costOf>[0];
     let tail = '';
@@ -889,7 +927,7 @@ export class InferenceMesh {
           // Same two layers as the non-streaming path; a stream's tokens count
           // against the account's daily cap too.
           if (candidate.provider.quota) {
-            await ledger.record(candidate.provider.id, usage.total_tokens);
+            await ledger.record(poolKey, usage.total_tokens);
           }
         }
         await ledger.flush();

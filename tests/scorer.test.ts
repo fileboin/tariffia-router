@@ -130,7 +130,7 @@ describe('deterministic model scorer', () => {
     );
     assert.deepEqual(
       s.components.map((c) => c.key).sort(),
-      ['availability', 'capability', 'context', 'cost', 'language', 'latency', 'output', 'quality'],
+      ['availability', 'capability', 'context', 'cost', 'headroom', 'language', 'latency', 'output', 'quality'],
     );
     for (const c of s.components) assert.ok(c.reason.length > 0, `${c.key} has a reason`);
     assert.match(s.components.find((c) => c.key === 'context')?.reason ?? '', /context/);

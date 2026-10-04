@@ -92,6 +92,13 @@ Tariffia additions to `src/core/` (own code):
 - `src/core/claude-family.ts` — generic Claude-family classifier + routing policy
   (`classifyClaudeFamily`, `resolveClaudeRouting`), and the corresponding wiring in
   `src/core/mesh.ts` `routeFor()` and `MeshOptions.claudeFamilyPolicy`.
+- Quota refinements: `Quota.tokensPerMinute` + rolling-minute token accounting and
+  `utilization()` in `src/core/ledger.ts`; `ProviderConfig.quotaPool` +
+  `quotaPoolKey()` (shared-account pool) used for the account-wide ledger layer in
+  `src/core/mesh.ts`; and a `headroom` scoring component
+  (`src/core/scorer.ts`, `src/core/router.ts` `RouterOptions.headroom`, fed by the
+  mesh's quota snapshot). Additive: with `quotaPool`/headroom unset, routing is
+  unchanged.
 
 New Tariffia files (not derived from upstream; own MIT-licensed code):
 `src/core/analyzer.ts`, `src/core/scorer.ts`,

@@ -31,6 +31,13 @@ import type { Candidate, RouteDecision, Rejection, RouteRequest, ScoredCandidate
 
 export interface RouterOptions {
   health?: HealthTracker;
+  /**
+   * Optional synchronous lookup of remaining quota headroom (0..1) for a
+   * candidate key. When absent (or returning undefined) every candidate scores
+   * headroom 1, so routing is unchanged. Kept synchronous so scoring stays pure
+   * and deterministic; the caller supplies a snapshot.
+   */
+  headroom?: (key: string) => number | undefined;
 }
 
 export class Router {
@@ -145,6 +152,7 @@ export class Router {
       requiredCapabilities,
       ...(req.minContext === undefined ? {} : { minContext: req.minContext }),
       ...(req.maxOutputTokens === undefined ? {} : { maxOutputTokens: req.maxOutputTokens }),
+      ...(this.opts.headroom === undefined ? {} : { headroom: this.opts.headroom(c.key) }),
     }));
 
     return rankCandidates(inputs, weights);
