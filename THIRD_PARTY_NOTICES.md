@@ -89,8 +89,8 @@ New Tariffia files (not derived from upstream; own MIT-licensed code):
 `src/routing-mode.ts`, `src/mode-mesh.ts`, `src/catalog-reader.ts`,
 `src/catalog-sync.ts`, `src/seed-import.ts`, `src/seed-candidates.ts`,
 `src/candidate-review.ts`, `src/candidate-probe.ts`,
-`src/free-status-evidence.ts`, `src/activation-gate.ts`, and
-`src/provider-builder.ts`.
+`src/free-status-evidence.ts`, `src/activation-gate.ts`,
+`src/provider-builder.ts`, and `src/registry-merge.ts`.
 
 All other imported files are byte-identical to the pinned upstream commit.
 
