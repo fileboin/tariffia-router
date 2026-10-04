@@ -77,8 +77,8 @@ Modifications (MIT permits this; recorded for upstream tracking):
 New Tariffia files (not derived from upstream; own MIT-licensed code):
 `src/core/analyzer.ts`, `src/core/scorer.ts`,
 `src/core/providers/anthropic.ts`, `src/core/providers/anthropic-wire.ts`,
-`src/routing-mode.ts`, `src/mode-mesh.ts`, and
-`src/catalog-reader.ts`.
+`src/routing-mode.ts`, `src/mode-mesh.ts`, `src/catalog-reader.ts`, and
+`src/catalog-sync.ts`.
 
 All other imported files are byte-identical to the pinned upstream commit.
 
