@@ -87,7 +87,8 @@ New Tariffia files (not derived from upstream; own MIT-licensed code):
 `src/core/analyzer.ts`, `src/core/scorer.ts`,
 `src/core/providers/anthropic.ts`, `src/core/providers/anthropic-wire.ts`,
 `src/routing-mode.ts`, `src/mode-mesh.ts`, `src/catalog-reader.ts`,
-`src/catalog-sync.ts`, `src/seed-import.ts`, and `src/seed-candidates.ts`.
+`src/catalog-sync.ts`, `src/seed-import.ts`, `src/seed-candidates.ts`, and
+`src/candidate-review.ts`.
 
 All other imported files are byte-identical to the pinned upstream commit.
 
