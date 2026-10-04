@@ -70,15 +70,15 @@ describe('verified catalog ingestion', () => {
     const bad = record({ models: [{ id: 'm1', capabilities: ['text'], contextWindow: 8192 } as never] });
     const r = ingestVerifiedCatalog([], catalog([bad]));
     assert.equal(r.accepted.length, 0);
-    assert.match(r.rejected[0]?.reason ?? '', /no verified price/);
+    assert.match(r.rejected[0]?.reason ?? '', /provenance audit failed: missing_price/);
   });
 
   test('4. a model missing context/capabilities is rejected', () => {
     const noCtx = ingestVerifiedCatalog([], catalog([record({ models: [{ id: 'm1', capabilities: ['text'], price: { inPerMTok: 0, outPerMTok: 0 } } as never] })]));
-    assert.match(noCtx.rejected[0]?.reason ?? '', /no verified contextWindow/);
+    assert.match(noCtx.rejected[0]?.reason ?? '', /provenance audit failed: missing_context/);
 
     const noCaps = ingestVerifiedCatalog([], catalog([record({ models: [{ id: 'm1', capabilities: [], contextWindow: 8192, price: { inPerMTok: 0, outPerMTok: 0 } }] })]));
-    assert.match(noCaps.rejected[0]?.reason ?? '', /no verified capabilities/);
+    assert.match(noCaps.rejected[0]?.reason ?? '', /provenance audit failed: missing_capabilities/);
   });
 
   test('5. an unsupported provider kind is rejected', () => {

@@ -24,6 +24,7 @@ import type { CandidateProvider } from './seed-candidates.js';
 import type { ActivationResult } from './activation-gate.js';
 import { buildProviderConfig, type VerifiedModelSpec, type VerifiedProviderSpec } from './provider-builder.js';
 import { mergeProviderConfig } from './registry-merge.js';
+import { auditCatalogProvenance } from './provenance-audit.js';
 
 /** One verified provider record from the catalog. */
 export interface CatalogProviderRecord {
@@ -141,6 +142,18 @@ export function ingestVerifiedCatalog(registry: ProviderConfig[], catalog: unkno
     }
     if (!Array.isArray(rec.models) || rec.models.length === 0) {
       rejected.push({ id, reason: 'no models' });
+      return;
+    }
+
+    // Provenance audit gate: the record claims to be verified, so it must carry
+    // the evidence. Blocking audit errors fail closed; warnings do not.
+    const audit = auditCatalogProvenance([rec as CatalogProviderRecord]);
+    if (!audit.valid) {
+      const first = audit.errors[0];
+      rejected.push({
+        id,
+        reason: `provenance audit failed: ${first ? `${first.code} (${first.id})` : 'unknown'}`,
+      });
       return;
     }
 
