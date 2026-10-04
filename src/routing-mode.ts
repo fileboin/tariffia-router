@@ -44,6 +44,14 @@ export const BALANCED_PROFILE: MeshProfile = {
 /** The profile name FREE_ONLY forces (the built-in free-only profile). */
 export const FREE_ONLY_PROFILE_NAME = 'free';
 
+/**
+ * The profile FREE_FIRST routes through when a request does not name one. Any
+ * non-free-only profile works; `best` is chosen so paid fallbacks are ranked by
+ * quality once the free tier is exhausted. The free-first ordering itself is
+ * enforced by the mesh (`freeFirst: true`), not by this profile.
+ */
+export const FREE_FIRST_PROFILE_NAME = 'best';
+
 export interface ModeSettings {
   /**
    * The default profile the server routes through when a request does not name
@@ -55,6 +63,8 @@ export interface ModeSettings {
   profiles?: Record<string, MeshProfile>;
   /** Server-authoritative FREE_ONLY enforcement. */
   enforceFreeOnly: boolean;
+  /** Server-authoritative FREE_FIRST ordering. Free candidates before paid. */
+  freeFirst: boolean;
 }
 
 export class RoutingModeError extends Error {
@@ -74,14 +84,21 @@ export function resolveMode(mode: RoutingMode | string): ModeSettings {
       return {
         defaultProfile: FREE_ONLY_PROFILE_NAME,
         enforceFreeOnly: true,
+        freeFirst: false,
       };
     case 'BALANCED':
       return {
         defaultProfile: BALANCED_PROFILE.name,
         profiles: { [BALANCED_PROFILE.name]: BALANCED_PROFILE },
         enforceFreeOnly: false,
+        freeFirst: false,
       };
     case 'FREE_FIRST':
+      return {
+        defaultProfile: FREE_FIRST_PROFILE_NAME,
+        enforceFreeOnly: false,
+        freeFirst: true,
+      };
     case 'CUSTOM':
       throw new RoutingModeError(
         `tariffia: routing mode '${mode}' is reserved and not implemented yet`,

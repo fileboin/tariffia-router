@@ -100,6 +100,17 @@ export interface MeshOptions {
    * executed. Defaults to false, so non-FREE_ONLY behavior is unchanged.
    */
   enforceFreeOnly?: boolean;
+  /**
+   * Server-authoritative FREE_FIRST ordering. When true, the ranked chain is
+   * split so every free candidate is tried before any paid candidate: free
+   * candidates keep their relative score order, then paid candidates follow in
+   * theirs. Paid is reached only when no free candidate can serve. Defaults to
+   * false, so other modes are unchanged.
+   *
+   * Never derived from a request. FREE_ONLY takes precedence: with both set, a
+   * paid candidate is still never executed.
+   */
+  freeFirst?: boolean;
 }
 
 /**
@@ -298,6 +309,7 @@ export class InferenceMesh {
   private readonly concurrencyWaitMs: number;
   private readonly onEvent: (e: MeshEvent) => void;
   private readonly enforceFreeOnly: boolean;
+  private readonly freeFirst: boolean;
 
   constructor(opts: MeshOptions) {
     this._registry = opts.registry;
@@ -311,6 +323,7 @@ export class InferenceMesh {
     this.concurrencyWaitMs = opts.concurrencyWaitMs ?? 30_000;
     this.onEvent = opts.onEvent ?? (() => {});
     this.enforceFreeOnly = opts.enforceFreeOnly ?? false;
+    this.freeFirst = opts.freeFirst ?? false;
     this.adapters = opts.adapters ?? {
       'openai-compat': new OpenAICompatAdapter(),
       'workers-ai': new OpenAICompatAdapter(),
@@ -360,8 +373,30 @@ export class InferenceMesh {
     // itself so a client-supplied value in `mesh` cannot influence scoring.
     if (typeof req.max_tokens === 'number') merged.maxOutputTokens = req.max_tokens;
     else delete merged.maxOutputTokens;
-    if (!this.enforceFreeOnly) return merged;
-    return this.enforceFreeOnlyRoute(merged);
+    if (this.enforceFreeOnly) return this.enforceFreeOnlyRoute(merged);
+    if (this.freeFirst) return this.enforceFreeFirstRoute(merged);
+    return merged;
+  }
+
+  /**
+   * FREE_FIRST pin sanitisation.
+   *
+   * A client pin must not turn FREE_FIRST into a paid-first route. A pin to a
+   * *paid* model is dropped so the ordered free-first chain serves; a pin to a
+   * free model is kept (it is already free-first). An unknown pin is left as-is;
+   * the router will report it as no candidate. This does not enforce free-only:
+   * paid candidates remain eligible as a later fallback.
+   */
+  private enforceFreeFirstRoute(req: RouteRequest): RouteRequest {
+    if (req.pin) {
+      const candidate = this.registry.find(req.pin);
+      if (candidate && !isFree(candidate.model)) {
+        const next: RouteRequest = { ...req };
+        delete next.pin;
+        return next;
+      }
+    }
+    return req;
   }
 
   /**
@@ -426,6 +461,21 @@ export class InferenceMesh {
     return this.run(req, signal, true) as Promise<StreamResult>;
   }
 
+  /**
+   * FREE_FIRST ordering: stable-partition the ranked chain so free candidates
+   * are attempted before any paid candidate. Free candidates first (in score
+   * order), then paid (in score order). Where FREE_ONLY is also on, the chain is
+   * free-only and this leaves it unchanged.
+   */
+  private freeFirstDecision(decision: RouteDecision): RouteDecision {
+    const free: ScoredCandidate[] = [];
+    const paid: ScoredCandidate[] = [];
+    for (const scored of decision.ranked) {
+      (isFree(scored.candidate.model) ? free : paid).push(scored);
+    }
+    return { ranked: [...free, ...paid], rejected: decision.rejected, profile: decision.profile };
+  }
+
   private async run(
     req: ChatRequest,
     signal: AbortSignal | undefined,
@@ -439,6 +489,11 @@ export class InferenceMesh {
     const capabilityReq = withRequiredCapabilities(routeReq, analysis.requiredCapabilities);
     let decision = this.router.route(capabilityReq);
     if (this.enforceFreeOnly) decision = this.enforceFreeOnlyDecision(decision);
+    // FREE_FIRST ordering, applied after the FREE_ONLY filter (which, under
+    // FREE_ONLY, leaves only free candidates, so this is a no-op there). The
+    // chain is stable-partitioned by free status; free candidates keep their
+    // relative score order, then paid candidates in theirs.
+    if (this.freeFirst) decision = this.freeFirstDecision(decision);
     this.onEvent({ type: 'route', profile: decision.profile.name, analysis });
 
     if (decision.ranked.length === 0) {

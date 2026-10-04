@@ -44,7 +44,7 @@ describe('routing mode resolution', () => {
   });
 
   test('reserved and unknown modes fail closed', () => {
-    assert.throws(() => resolveMode('FREE_FIRST'), /reserved and not implemented/);
+    // FREE_FIRST is now implemented; CUSTOM remains reserved.
     assert.throws(() => resolveMode('CUSTOM'), /reserved and not implemented/);
     assert.throws(() => resolveMode('nonsense'), (e: unknown) => e instanceof RoutingModeError);
   });
@@ -53,10 +53,11 @@ describe('routing mode resolution', () => {
     assert.equal(modeFromEnv({}), 'FREE_ONLY', 'absent -> safe default');
     assert.equal(modeFromEnv({ TARIFFIA_MODE: '' }), 'FREE_ONLY');
     assert.equal(modeFromEnv({ TARIFFIA_MODE: 'balanced' }), 'BALANCED');
-    // A reserved-but-known mode is returned by the parser and rejected when
-    // resolved, so configuring it fails closed without a silent downgrade.
     assert.equal(modeFromEnv({ TARIFFIA_MODE: 'free_first' }), 'FREE_FIRST');
-    assert.throws(() => resolveMode(modeFromEnv({ TARIFFIA_MODE: 'free_first' })), /reserved/);
+    // A reserved-but-known mode (CUSTOM) is returned by the parser and rejected
+    // when resolved, so configuring it fails closed without a silent downgrade.
+    assert.equal(modeFromEnv({ TARIFFIA_MODE: 'custom' }), 'CUSTOM');
+    assert.throws(() => resolveMode(modeFromEnv({ TARIFFIA_MODE: 'custom' })), /reserved/);
     assert.throws(() => modeFromEnv({ TARIFFIA_MODE: 'turbo' }), /not a known mode/);
   });
 });

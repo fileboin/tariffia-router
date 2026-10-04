@@ -62,6 +62,10 @@ Modifications (MIT permits this; recorded for upstream tracking):
 - `src/core/registry.ts` — added a `withProfiles()` copy method (keeps loaded
   providers/credentials, overlays profiles/default) for the Tariffia mode layer.
   Routing/scoring helpers unchanged.
+- `src/core/mesh.ts` (further) — `MeshOptions.freeFirst` (default off) and a
+  stable `freeFirstDecision()` partition that orders free candidates before paid
+  ones; `routeFor` drops a client pin to a paid model under FREE_FIRST so it
+  cannot force paid-first behavior. Scoring, retry and adapter behavior unchanged.
 
 New Tariffia files (not derived from upstream; own MIT-licensed code):
 `src/core/analyzer.ts`, `src/core/scorer.ts`,
