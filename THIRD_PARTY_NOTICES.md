@@ -88,6 +88,11 @@ Modifications (MIT permits this; recorded for upstream tracking):
   `lastUpdated` 2026-08-21). Stored separately from the active registry as
   candidate data; it is never loaded by the router. See `seed/README.md`.
 
+Tariffia additions to `src/core/` (own code):
+- `src/core/claude-family.ts` — generic Claude-family classifier + routing policy
+  (`classifyClaudeFamily`, `resolveClaudeRouting`), and the corresponding wiring in
+  `src/core/mesh.ts` `routeFor()` and `MeshOptions.claudeFamilyPolicy`.
+
 New Tariffia files (not derived from upstream; own MIT-licensed code):
 `src/core/analyzer.ts`, `src/core/scorer.ts`,
 `src/core/providers/anthropic.ts`, `src/core/providers/anthropic-wire.ts`,

@@ -128,10 +128,19 @@ function anthropicError(message: string, status: number): unknown {
 function authorized(req: Request, tokens: Set<string>): boolean {
   if (tokens.size === 0) return false;
   const header = req.headers.get('authorization');
-  if (!header) return false;
-  const m = header.match(/^Bearer\s+(.+)$/i);
-  if (!m) return false;
-  return tokens.has(m[1] as string);
+  if (header) {
+    // An explicit Authorization header must stand on its own: a malformed or
+    // invalid bearer is rejected, never silently rescued by x-api-key.
+    const m = header.match(/^Bearer\s+(.+)$/i);
+    if (!m) return false;
+    return tokens.has(m[1] as string);
+  }
+  // No Authorization present: accept the Anthropic `x-api-key` header, which is
+  // what Claude Code and the Anthropic SDKs send. Same token, different header;
+  // the trust boundary is unchanged.
+  const apiKey = req.headers.get('x-api-key');
+  if (!apiKey) return false;
+  return tokens.has(apiKey);
 }
 
 /**
@@ -158,7 +167,7 @@ export async function handleRequest(req: Request, opts: GatewayOptions): Promise
 
   const isHealth = url.pathname === '/healthz';
   if (!(isHealth && opts.publicHealth) && !authorized(req, opts.tokens)) {
-    return json(errorBody('missing or invalid bearer token', 'unauthorized'), 401, ch);
+    return json(errorBody('missing or invalid credentials', 'unauthorized'), 401, ch);
   }
 
   if (isHealth) {

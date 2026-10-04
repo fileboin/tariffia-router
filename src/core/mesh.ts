@@ -7,6 +7,7 @@
  */
 
 import { analyzeRequest, type AnalyzeOptions, type TaskRequirements } from './analyzer.js';
+import { resolveClaudeRouting, type ClaudeFamilyPolicy } from './claude-family.js';
 import { ConcurrencyLimiter, type Slot } from './concurrency.js';
 import { HealthTracker } from './health.js';
 import { QuotaLedger } from './ledger.js';
@@ -118,6 +119,22 @@ export interface MeshOptions {
    * read from a request.
    */
   allowAvoidRiskProviders?: boolean;
+  /**
+   * Optional Claude-family routing policy.
+   *
+   * Claude Code sends normal Claude model ids (`claude-sonnet-*`, ...). This map
+   * decides how such an id routes WITHOUT becoming a pin. A value is either:
+   *   - a profile name to route through (e.g. 'balanced', 'free'), or
+   *   - the sentinel 'auto' meaning "no profile, no pin — use the active
+   *     profile/default" (the safe default for every family), or
+   *   - a `provider/model` pin to route to a specific backend.
+   *
+   * The requested Claude id is preserved for the client-visible response; only
+   * the internal routing target changes. Server-owned; never read from a request.
+   * When omitted, every family is 'auto' (behaviour is unchanged for non-Claude
+   * ids and Claude ids alike, except that a Claude id no longer pins to nothing).
+   */
+  claudeFamilyPolicy?: ClaudeFamilyPolicy;
 }
 
 /**
@@ -318,6 +335,7 @@ export class InferenceMesh {
   private readonly enforceFreeOnly: boolean;
   private readonly freeFirst: boolean;
   private readonly allowAvoidRiskProviders: boolean;
+  private readonly claudeFamilyPolicy: ClaudeFamilyPolicy;
 
   constructor(opts: MeshOptions) {
     // Apply the risk filter first, at construction, so an `avoid` provider is
@@ -335,6 +353,7 @@ export class InferenceMesh {
     this.enforceFreeOnly = opts.enforceFreeOnly ?? false;
     this.freeFirst = opts.freeFirst ?? false;
     this.allowAvoidRiskProviders = opts.allowAvoidRiskProviders ?? false;
+    this.claudeFamilyPolicy = opts.claudeFamilyPolicy ?? {};
     this.adapters = opts.adapters ?? {
       'openai-compat': new OpenAICompatAdapter(),
       'workers-ai': new OpenAICompatAdapter(),
@@ -377,12 +396,28 @@ export class InferenceMesh {
   }
 
   private routeFor(req: ChatRequest): RouteRequest {
-    const parsed = parseModel(req.model);
+    // Claude-family routing, applied BEFORE parseModel would pin a normal Claude
+    // id to a non-existent `provider/model`. This only changes the internal
+    // routing target; `req.model` (the client-visible id) is left untouched so the
+    // Anthropic response keeps the requested Claude identity.
+    const claude = resolveClaudeRouting(req.model, this.claudeFamilyPolicy);
+    const routingModel = claude
+      ? claude.pin
+        ? claude.pin
+        : claude.mesh
+          ? `mesh/${claude.mesh}`
+          : req.model // auto: no profile, no pin -> parse as the model/index
+      : req.model;
+
+    const parsed = parseModel(routingModel);
     const merged: RouteRequest = {
       ...parsed,
       ...(req.mesh ?? {}),
       ...(parsed.mesh ? { mesh: parsed.mesh } : {}),
     };
+    // An auto Claude id has no slash and no mesh; parseModel would turn it into a
+    // pin. Clear that pin so the active profile/scorer decides.
+    if (claude && !claude.pin && !claude.mesh) delete merged.pin;
     // The requested output budget is a scoring signal; take it from the request
     // itself so a client-supplied value in `mesh` cannot influence scoring.
     if (typeof req.max_tokens === 'number') merged.maxOutputTokens = req.max_tokens;

@@ -8,6 +8,8 @@
 export * from './types.js';
 export { analyzeRequest } from './analyzer.js';
 export type { AnalyzeOptions, Protocol, TaskRequirements } from './analyzer.js';
+export { classifyClaudeFamily, isClaudeModel, resolveClaudeRouting } from './claude-family.js';
+export type { ClaudeFamily, ClaudeFamilyPolicy, ClaudeFamilyTarget, ClaudeRouting } from './claude-family.js';
 export { rankCandidates, scoreCandidate } from './scorer.js';
 export type { RankingInput, ScoreWeights } from './scorer.js';
 export { Registry, DEFAULT_PROFILES, blendedPrice, costOf, isFree, languageScore } from './registry.js';

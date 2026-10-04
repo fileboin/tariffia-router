@@ -86,7 +86,7 @@ function readBody(req: IncomingMessage): Promise<Buffer> {
 export async function startServeServer(config: ServeConfig): Promise<RunningServer> {
   // loadRegistry throws on missing/invalid registry. Apply the mode so the
   // server-owned enforcement (FREE_ONLY by default) is in place before serving.
-  const base = await loadRegistry({ path: config.registryPath, env: {} });
+  const base = await loadRegistry({ path: config.registryPath, env: process.env });
   const mesh = createModeMesh({ registry: base, mode: config.mode });
   const tokens = new Set([config.token]);
 
