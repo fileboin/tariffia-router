@@ -39,9 +39,11 @@ Modifications (MIT permits this; recorded for upstream tracking):
   pin to a non-free/unknown model and forces the free-only profile, a ranked
   chain filter that removes non-free candidates, and a final execution-boundary
   guard. The default adapter map also registers the new `anthropic` adapter, the
-  `route` event carries the deterministic task analysis, and the analyzer's
+  `route` event carries the deterministic task analysis, the analyzer's
   `requiredCapabilities` are merged into the request's capabilities as a hard
-  pre-scoring filter. The candidate ranking step now delegates to the new
+  pre-scoring filter, and an `allowAvoidRiskProviders` option (default off)
+  governs the construction-time removal of `risk: 'avoid'` providers. The
+  candidate ranking step now delegates to the new
   explainable scorer (`src/core/scorer.ts`), preserving the existing scoring
   signals, weights and deterministic tie-break. Fallback execution gained an
   explicit per-request dedupe and an execution-boundary guard that repeats the
@@ -64,8 +66,9 @@ Modifications (MIT permits this; recorded for upstream tracking):
 - `src/core/index.ts` — exports the new `AnthropicAdapter`, the analyzer and the
   scorer.
 - `src/core/registry.ts` — added a `withProfiles()` copy method (keeps loaded
-  providers/credentials, overlays profiles/default) for the Tariffia mode layer.
-  Routing/scoring helpers unchanged.
+  providers/credentials, overlays profiles/default) for the Tariffia mode layer,
+  and a `withoutAvoidRisk()` copy that removes `risk: 'avoid'` providers. Routing
+  and scoring helpers unchanged.
 - `src/core/mesh.ts` (further) — `MeshOptions.freeFirst` (default off) and a
   stable `freeFirstDecision()` partition that orders free candidates before paid
   ones; `routeFor` drops a client pin to a paid model under FREE_FIRST so it

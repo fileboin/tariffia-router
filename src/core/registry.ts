@@ -168,6 +168,35 @@ export class Registry {
   }
 
   /**
+   * A copy of this registry with providers whose `risk` is `'avoid'` removed,
+   * unless `allowAvoid` is true. Filtering here — at registry construction, not
+   * at request time — means an avoided provider is never a candidate, so no
+   * client pin, profile, or scoring path can reach it.
+   *
+   * Only `risk === 'avoid'` is filtered; `'ok'`, `'caution'` and undefined are
+   * kept. Risk is read, never inferred or modified.
+   *
+   * Tariffia addition (2026-10-03). See THIRD_PARTY_NOTICES.md.
+   */
+  withoutAvoidRisk(allowAvoid = false): Registry {
+    if (allowAvoid) return this;
+    const kept = this.providers.filter((p) => p.risk !== 'avoid');
+    const dropped = this.providers.length - kept.length;
+    if (dropped === 0) return this;
+    const clone = this.withProfiles({});
+    (clone as { providers: ProviderConfig[] }).providers = kept;
+    const keptIds = new Set(kept.map((p) => p.id));
+    (clone as { candidates: Candidate[] }).candidates = this.candidates.filter((c) => keptIds.has(c.provider.id));
+    (clone as { warnings: LoadWarning[] }).warnings = [
+      ...this.warnings,
+      ...this.providers
+        .filter((p) => p.risk === 'avoid')
+        .map((p) => ({ providerId: p.id, reason: 'risk: avoid (not routed by default)' })),
+    ];
+    return clone;
+  }
+
+  /**
    * A copy of this registry with extra profiles and/or a different default
    * profile, keeping the providers, candidates, credentials and warnings
    * already loaded. Used by the Tariffia mode layer to apply a server-owned

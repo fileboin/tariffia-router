@@ -111,6 +111,13 @@ export interface MeshOptions {
    * paid candidate is still never executed.
    */
   freeFirst?: boolean;
+  /**
+   * Server-side opt-in to route providers marked `risk: 'avoid'`. Defaults to
+   * false, so avoided providers are never candidates unless the operator
+   * explicitly allows them. Set by the server from its own configuration; never
+   * read from a request.
+   */
+  allowAvoidRiskProviders?: boolean;
 }
 
 /**
@@ -310,9 +317,12 @@ export class InferenceMesh {
   private readonly onEvent: (e: MeshEvent) => void;
   private readonly enforceFreeOnly: boolean;
   private readonly freeFirst: boolean;
+  private readonly allowAvoidRiskProviders: boolean;
 
   constructor(opts: MeshOptions) {
-    this._registry = opts.registry;
+    // Apply the risk filter first, at construction, so an `avoid` provider is
+    // never a candidate for any request. The opt-in is server-owned.
+    this._registry = opts.registry.withoutAvoidRisk(opts.allowAvoidRiskProviders ?? false);
     this.ledger = opts.ledger ?? new QuotaLedger();
     this.health = opts.health ?? new HealthTracker();
     this.limits = opts.limiter ?? new ConcurrencyLimiter();
@@ -324,6 +334,7 @@ export class InferenceMesh {
     this.onEvent = opts.onEvent ?? (() => {});
     this.enforceFreeOnly = opts.enforceFreeOnly ?? false;
     this.freeFirst = opts.freeFirst ?? false;
+    this.allowAvoidRiskProviders = opts.allowAvoidRiskProviders ?? false;
     this.adapters = opts.adapters ?? {
       'openai-compat': new OpenAICompatAdapter(),
       'workers-ai': new OpenAICompatAdapter(),
@@ -358,8 +369,11 @@ export class InferenceMesh {
    * forgetting that on every key addition would walk straight into a 429.
    */
   reload(registry: Registry): void {
-    this._registry = registry;
-    this._router = new Router(registry, { health: this.health });
+    // Re-apply the risk filter so a reloaded registry cannot reintroduce an
+    // `avoid` provider that construction-time filtering removed.
+    const filtered = registry.withoutAvoidRisk(this.allowAvoidRiskProviders);
+    this._registry = filtered;
+    this._router = new Router(filtered, { health: this.health });
   }
 
   private routeFor(req: ChatRequest): RouteRequest {

@@ -125,3 +125,14 @@ export function modeFromEnv(env: Record<string, string | undefined> = {}): Routi
     `tariffia: TARIFFIA_MODE='${raw}' is not a known mode. Known: ${ROUTING_MODES.join(', ')}`,
   );
 }
+
+/**
+ * Server-side opt-in to route providers marked `risk: 'avoid'`.
+ *
+ * Read from `TARIFFIA_ALLOW_AVOID=1`. Defaults to false, so avoided providers
+ * are excluded unless an operator explicitly allows them. This is server
+ * configuration; it is never read from a request.
+ */
+export function allowAvoidFromEnv(env: Record<string, string | undefined> = {}): boolean {
+  return env['TARIFFIA_ALLOW_AVOID'] === '1';
+}
