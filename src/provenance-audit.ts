@@ -18,6 +18,7 @@
  */
 
 import type { CatalogProviderRecord } from './catalog-ingest.js';
+import { validateVerificationEvidence } from './verification-evidence.js';
 
 export type AuditScope = 'provider' | 'model';
 
@@ -52,6 +53,101 @@ function isDate(v: unknown): v is string {
 
 function filled(v: unknown): boolean {
   return typeof v === 'string' && v.trim().length > 0;
+}
+
+/**
+ * Bridge a catalog record into the canonical `VerificationEvidence` shape.
+ *
+ * It uses only data the record actually carries: a ref's source defaults to the
+ * provider's provenance source and its date to the record's verification date.
+ * Where the record carries an explicit boolean instead of a ref (compatibility,
+ * free status), that boolean decides whether the source/date are attached. A
+ * missing URL or date is left missing on purpose, so the canonical validator
+ * reports it — nothing is invented.
+ */
+function bridgeToVerificationEvidence(record: CatalogProviderRecord, providerId: string): unknown {
+  const prov = record.candidate?.provenance;
+  const source = filled(prov?.source) ? (prov.source as string) : '';
+  const date = filled(record.provider?.riskVerifiedAt)
+    ? (record.provider.riskVerifiedAt as string)
+    : filled(prov?.retrievedAt)
+      ? (prov.retrievedAt as string)
+      : '';
+
+  const refFromFlag = (flag: boolean | undefined): Record<string, unknown> => ({
+    source: flag === true ? source : '',
+    verifiedAt: flag === true ? date : '',
+  });
+
+  const provider = {
+    source,
+    verifiedAt: date,
+    compatibility: refFromFlag(record.compatibilityVerified),
+    freeStatus: refFromFlag(record.freeStatusVerified),
+    privacy: { source, verifiedAt: date },
+    risk: { source, verifiedAt: date },
+  };
+
+  const models: Record<string, unknown> = {};
+  for (const model of Array.isArray(record.models) ? record.models : []) {
+    const modelId = filled(model?.id) ? (model.id as string) : `${providerId}/(no-id)`;
+    const hasPrice =
+      model?.price &&
+      typeof model.price.inPerMTok === 'number' &&
+      typeof model.price.outPerMTok === 'number';
+    const priceRef =
+      hasPrice && (model.price.inPerMTok !== 0 || model.price.outPerMTok !== 0)
+        ? { source, verifiedAt: filled(model.priceVerifiedAt) ? (model.priceVerifiedAt as string) : '' }
+        : { source: hasPrice ? source : '', verifiedAt: hasPrice ? date : '' };
+    models[modelId] = {
+      source,
+      verifiedAt: date,
+      price: priceRef,
+      contextWindow: {
+        source,
+        verifiedAt:
+          typeof model?.contextWindow === 'number' && Number.isFinite(model.contextWindow) && model.contextWindow > 0
+            ? date
+            : '',
+      },
+      capabilities: {
+        source,
+        verifiedAt: Array.isArray(model?.capabilities) && model.capabilities.length > 0 ? date : '',
+      },
+    };
+  }
+
+  return { provider, models };
+}
+
+/** Map a canonical evidence problem to the audit's existing code/scope. */
+function mapEvidenceProblem(
+  scope: 'provider' | 'model',
+  path: string,
+): { scope: AuditScope; code: string; message: string } | null {
+  if (scope === 'provider') {
+    if (path === 'provider.source') return { scope: 'provider', code: 'missing_source', message: 'no source/provenance information' };
+    if (path === 'provider.verifiedAt') return { scope: 'provider', code: 'missing_verification_date', message: 'no YYYY-MM-DD verification date' };
+    if (path.startsWith('provider.compatibility')) return { scope: 'provider', code: 'missing_compatibility_evidence', message: 'compatibility evidence is missing or malformed' };
+    if (path.startsWith('provider.freeStatus')) return { scope: 'provider', code: 'missing_free_status_evidence', message: 'free/paid status evidence is missing or malformed' };
+    if (path.startsWith('provider.privacy')) return { scope: 'provider', code: 'missing_privacy_evidence', message: 'privacy evidence is missing or malformed' };
+    if (path.startsWith('provider.risk')) return { scope: 'provider', code: 'missing_risk_evidence', message: 'risk evidence is missing or malformed' };
+    return null;
+  }
+  // model paths look like `models.<id>.<field>`.
+  if (path === 'models') return { scope: 'model', code: 'no_models', message: 'record has no models' };
+  const field = path.split('.').slice(2).join('.');
+  if (field === 'source') return { scope: 'model', code: 'missing_model_source', message: 'model evidence has no source' };
+  if (field === 'verifiedAt') return { scope: 'model', code: 'missing_model_verification_date', message: 'model evidence has no verification date' };
+  if (field.startsWith('price')) return { scope: 'model', code: 'missing_price_evidence', message: 'model price evidence is missing or malformed' };
+  if (field.startsWith('contextWindow')) return { scope: 'model', code: 'missing_context', message: 'model context evidence is missing or malformed' };
+  if (field.startsWith('capabilities')) return { scope: 'model', code: 'missing_capabilities', message: 'model capabilities evidence is missing or malformed' };
+  return null;
+}
+
+function modelIdFromPath(path: string): string {
+  const parts = path.split('.');
+  return parts[1] ?? '(no-id)';
 }
 
 /**
@@ -141,6 +237,21 @@ export function auditCatalogProvenance(records: CatalogProviderRecord[]): AuditR
 
       if (model?.quality === undefined) {
         warn('model', modelId, 'missing_quality', 'no quality rating recorded (optional)');
+      }
+    }
+
+    // Canonical evidence validation: bridge the record's provenance into a
+    // VerificationEvidence value and run the single canonical validator. Its
+    // problems are translated to the audit's existing error codes so the public
+    // behavior stays compatible while the rule lives in one place.
+    const bridged = bridgeToVerificationEvidence(record, providerId);
+    const canonical = validateVerificationEvidence(bridged);
+    for (const problem of canonical.errors) {
+      const mapped = mapEvidenceProblem(problem.scope, problem.path);
+      if (!mapped) continue;
+      const id = problem.scope === 'provider' ? providerId : `${providerId}/${modelIdFromPath(problem.path)}`;
+      if (!errors.some((e) => e.scope === mapped.scope && e.id === id && e.code === mapped.code)) {
+        err(mapped.scope, id, mapped.code, mapped.message);
       }
     }
   }

@@ -34,6 +34,11 @@ Modifications (MIT permits this; recorded for upstream tracking):
   route were removed, together with their imports of `setup-ui.ts` and
   `validation-probe.ts` (both excluded from the approved import set), and a
   type-only `Registry` import was retained. No routing logic changed.
+- `src/provenance-audit.ts` (further) — bridges each verified catalog record into
+  the canonical `VerificationEvidence` shape and runs the single
+  `validateVerificationEvidence()` validator, mapping its problems back to the
+  audit's existing deterministic error codes. Existing warnings and public
+  behavior preserved; no inference or defaults.
 - `src/core/mesh.ts` — a server-authoritative `FREE_ONLY` gate was added: an
   `enforceFreeOnly` mesh option (default off), request sanitisation that drops a
   pin to a non-free/unknown model and forces the free-only profile, a ranked
