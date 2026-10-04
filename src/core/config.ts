@@ -42,6 +42,9 @@ export const VALID_CAPABILITIES = new Set<string>([
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
+/** Terms-of-service / abuse risk dispositions a registry may record. */
+const VALID_RISK = new Set(['ok', 'caution', 'avoid']);
+
 /**
  * An environment-variable name: the only credential shape a registry may hold.
  *
@@ -117,6 +120,25 @@ export function validateRegistryFile(raw: unknown): RegistryFile {
       assertEnvName(p.accountIdEnv, `provider '${p.id}' accountIdEnv`);
     }
     if (!p.maxPrivacy) throw new Error(`registry: provider '${p.id}' has no maxPrivacy`);
+    if (p.risk !== undefined && !VALID_RISK.has(p.risk)) {
+      throw new Error(
+        `registry: provider '${p.id}' has unknown risk '${String(p.risk)}'. ` +
+          `Known: ${[...VALID_RISK].join(', ')}`,
+      );
+    }
+    if (p.risk === 'avoid' && (typeof p.riskNote !== 'string' || p.riskNote.trim().length === 0)) {
+      // An 'avoid' with no reason is not actionable and cannot be reviewed.
+      throw new Error(
+        `registry: provider '${p.id}' has risk 'avoid' but no riskNote. ` +
+          `Record one line explaining why it must not be routed.`,
+      );
+    }
+    if (p.riskVerifiedAt !== undefined && !DATE.test(p.riskVerifiedAt)) {
+      throw new Error(
+        `registry: provider '${p.id}' has an invalid riskVerifiedAt ` +
+          `('${p.riskVerifiedAt}'); expected YYYY-MM-DD`,
+      );
+    }
     if (!Array.isArray(p.models) || p.models.length === 0) {
       throw new Error(`registry: provider '${p.id}' has no models`);
     }

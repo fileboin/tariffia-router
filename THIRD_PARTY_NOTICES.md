@@ -51,7 +51,11 @@ Modifications (MIT permits this; recorded for upstream tracking):
 - `src/core/gateway.ts` — in addition to the removals above, a `POST /v1/messages`
   route was added for Anthropic-compatible clients. The OpenAI-compatible route
   is unchanged.
-- `src/core/types.ts` — `'anthropic'` added to `ProviderKind`.
+- `src/core/types.ts` — `'anthropic'` added to `ProviderKind`; optional
+  `risk`/`riskNote`/`riskVerifiedAt` fields added to `ProviderConfig`.
+- `src/core/config.ts` (further) — validates provider risk metadata: `risk` in
+  {ok,caution,avoid}, `riskVerifiedAt` YYYY-MM-DD, and `risk === 'avoid'`
+  requires a non-empty `riskNote`. No routing behavior added.
 - `src/core/config.ts` — valid provider kinds now include `'anthropic'`; registry
   validation was hardened: `apiKeyEnv`/`accountIdEnv` must be environment-variable
   names (a pasted secret is rejected with a hint), `baseUrl` must be a valid

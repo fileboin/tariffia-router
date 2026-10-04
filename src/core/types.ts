@@ -236,6 +236,28 @@ export interface ProviderConfig {
    * Absent means the provider publishes no account-wide window.
    */
   quota?: Quota;
+  /**
+   * Structured terms-of-service / abuse risk disposition.
+   *
+   *   'ok'      — normal use of a documented API within its terms
+   *   'caution' — legitimate but with caveats a reader should see
+   *   'avoid'   — must not be routed by default; requires `riskNote`
+   *
+   * Optional. A registry without it loads unchanged. This is a human judgement
+   * recorded as data; it is never inferred from a provider name, URL, price or
+   * free-tier status. Nothing routes on it yet (routing policy is a later step).
+   *
+   * Tariffia addition (2026-10-03). See THIRD_PARTY_NOTICES.md.
+   */
+  risk?: 'ok' | 'caution' | 'avoid';
+  /** One line explaining the risk disposition. Required when `risk` is 'avoid'. */
+  riskNote?: string;
+  /**
+   * Date (YYYY-MM-DD) a human last checked the risk disposition. Same shape and
+   * purpose as `priceVerifiedAt`: the claim is only as good as the day it was
+   * checked.
+   */
+  riskVerifiedAt?: string;
   models: ModelEntry[];
   disabled?: boolean;
 }
