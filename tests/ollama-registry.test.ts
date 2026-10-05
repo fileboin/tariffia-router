@@ -22,7 +22,7 @@ describe('Tariffia-owned provider registry', () => {
     const validated = validateRegistryFile(raw);
     assert.deepEqual(
       validated.providers.map((p) => p.id).sort(),
-      ['deepinfra', 'ollama', 'openrouter'],
+      ['deepinfra', 'ollama', 'openai', 'openrouter'],
     );
     assert.equal(validated.providers[0]?.id, 'ollama');
   });

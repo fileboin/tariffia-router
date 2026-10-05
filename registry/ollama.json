@@ -1,7 +1,7 @@
 {
   "$comment": [
     "Tariffia Router — provider registry.",
-    "Contains multiple providers: Ollama, OpenRouter, DeepInfra.",
+    "Contains multiple providers: Ollama, OpenRouter, DeepInfra, OpenAI.",
     "This file is data, not code: adding a provider/model of an existing kind",
     "does not require a core change.",
     "",
@@ -224,6 +224,23 @@
           "capabilities": ["text"],
           "contextWindow": 1048576,
           "price": { "inPerMTok": 0.2, "outPerMTok": 0.6 },
+          "priceVerifiedAt": "2026-10-05"
+        }
+      ]
+    },
+    {
+      "id": "openai",
+      "kind": "openai-compat",
+      "baseUrl": "https://api.openai.com/v1",
+      "apiKeyEnv": "OPENAI_API_KEY",
+      "maxPrivacy": "public",
+      "summary": "OpenAI — official API (OpenAI-compatible).",
+      "models": [
+        {
+          "id": "gpt-4o-mini",
+          "capabilities": ["text", "vision", "tools", "json"],
+          "contextWindow": 128000,
+          "price": { "inPerMTok": 0.15, "outPerMTok": 0.6 },
           "priceVerifiedAt": "2026-10-05"
         }
       ]
