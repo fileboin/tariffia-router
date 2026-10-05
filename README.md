@@ -92,6 +92,42 @@ tariffia-router/
 └── scripts/
 ```
 
+## Install on a VPS (one command)
+
+Requirements: Linux with systemd, root (sudo), and **Node.js >= 20 already installed**.
+The installer will not install Node or any other system package — it stops with a clear
+message if Node is missing or older than 20.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/fileboin/tariffia-router/main/scripts/install.sh | sudo bash
+```
+
+What it does:
+
+- clones (or updates) the repo in `/opt/tariffia-router` (or uses the checkout it is run
+  from), runs `npm ci` and `npm run build`;
+- writes `/etc/tariffia-router.env` (root-only, mode `0600`) with `TARIFFIA_HOST=0.0.0.0`,
+  `TARIFFIA_PORT=8910`, `TARIFFIA_MODE=FREE_ONLY`, `TARIFFIA_REGISTRY`, and a generated
+  `TARIFFIA_TOKEN`;
+- installs and starts the systemd unit `tariffia-router.service`
+  (`node dist/src/cli/index.js serve`) and verifies `/healthz`.
+
+It is **idempotent**: re-running keeps the existing token, updates the build, and
+restarts the service.
+
+Where things live:
+
+- Router directory: `/opt/tariffia-router`
+- Listens on: `http://0.0.0.0:8910` (OpenAI-compatible base URL `http://<vps-ip>:8910/v1`)
+- Env / token: `/etc/tariffia-router.env` (root only)
+- Status: `systemctl status tariffia-router`
+- Logs: `journalctl -u tariffia-router -f`
+- Router URL and token: the installer prints them once; the token is also in the env file:
+  `sudo grep TARIFFIA_TOKEN /etc/tariffia-router.env`
+
+Provider API keys are **not** handled by the installer. Add them to the env file (using
+the env names from your registry) and run `systemctl restart tariffia-router`.
+
 ## Licence
 
 MIT (proposed — see [09-open-decisions.md](./docs/09-open-decisions.md)).
