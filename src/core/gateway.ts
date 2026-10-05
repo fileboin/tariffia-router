@@ -53,6 +53,13 @@ export interface GatewayOptions {
   /** Enables /setup and the key endpoints. Omit to disable setup entirely. */
   keyStore?: KeyStore;
   /**
+   * Allow the narrow provider-key sync route
+   * (`PUT /v1/providers/{providerId}/key`). The Node server enables this only
+   * when it listens on loopback, so a Router bound to 0.0.0.0 never exposes key
+   * intake to the network.
+   */
+  keySync?: boolean;
+  /**
    * Optional screenshots for the setup page's step-by-step guides.
    *
    * Injected rather than read from disk here, because this file has to keep
@@ -234,6 +241,35 @@ export async function handleRequest(req: Request, opts: GatewayOptions): Promise
       200,
       ch,
     );
+  }
+
+  // Narrow, authenticated provider-key sync. The key is held only by the injected
+  // KeyStore (memory on the Node server), never returned, never logged, never
+  // written here. Only provider IDs declared in the registry are accepted, and
+  // only when the server allows key sync (loopback bind).
+  if (req.method === 'PUT' && url.pathname.startsWith('/v1/providers/') && url.pathname.endsWith('/key')) {
+    if (!opts.keyStore || !opts.keySync) {
+      return json(errorBody('provider key sync is disabled', 'forbidden'), 403, ch);
+    }
+    const providerId = decodeURIComponent(url.pathname.slice('/v1/providers/'.length, -'/key'.length));
+    const known = opts.keyStore.providerConfigs().some((p) => p.id === providerId);
+    if (!known) {
+      return json(errorBody(`unknown provider '${providerId}'`, 'not_found'), 404, ch);
+    }
+    let body: { key?: unknown };
+    try {
+      body = (await req.json()) as { key?: unknown };
+    } catch {
+      return json(errorBody('request body is not valid JSON', 'invalid_request'), 400, ch);
+    }
+    const key = body && typeof body.key === 'string' ? body.key : '';
+    if (key.length === 0) {
+      return json(errorBody('`key` (string) is required', 'invalid_request'), 400, ch);
+    }
+    await opts.keyStore.save({ [providerId]: key });
+    opts.mesh.reload(await opts.keyStore.reload());
+    // Never echo the key: only that the provider is now configured.
+    return json({ ok: true, provider: providerId, configured: true }, 200, ch);
   }
 
   if (url.pathname === '/v1/models' && req.method === 'GET') {

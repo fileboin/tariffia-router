@@ -45,9 +45,7 @@ export interface LoadRegistryOptions extends RegistryOptions {
  * registry — a typo in a path must not be answered with a different registry
  * than the one asked for.
  */
-export async function loadRegistry(options: LoadRegistryOptions = {}): Promise<Registry> {
-  const path = options.path ?? DEFAULT_REGISTRY_PATH;
-
+export async function loadRegistryFile(path: string = DEFAULT_REGISTRY_PATH): Promise<RegistryFile> {
   let text: string;
   try {
     text = await readFile(path, 'utf8');
@@ -64,7 +62,12 @@ export async function loadRegistry(options: LoadRegistryOptions = {}): Promise<R
     throw new Error(`tariffia: registry '${path}' is not valid JSON: ${reason}`);
   }
 
-  const file: RegistryFile = validateRegistryFile(raw);
+  return validateRegistryFile(raw);
+}
+
+export async function loadRegistry(options: LoadRegistryOptions = {}): Promise<Registry> {
+  const path = options.path ?? DEFAULT_REGISTRY_PATH;
+  const file: RegistryFile = await loadRegistryFile(path);
   const opts: RegistryOptions = {};
   if (options.env) opts.env = options.env;
   if (options.profiles) opts.profiles = options.profiles;

@@ -24,8 +24,10 @@ import { createServer, type IncomingMessage, type Server } from 'node:http';
 import { randomBytes } from 'node:crypto';
 
 import { createModeMesh } from './mode-mesh.js';
-import { loadRegistry, DEFAULT_REGISTRY_PATH } from './registry-loader.js';
-import { handleRequest } from './core/gateway.js';
+import { loadRegistry, loadRegistryFile, DEFAULT_REGISTRY_PATH } from './registry-loader.js';
+import { handleRequest, type KeyStore } from './core/gateway.js';
+import type { Registry } from './core/registry.js';
+import type { ProviderConfig } from './core/types.js';
 import { modeFromEnv, type RoutingMode } from './routing-mode.js';
 
 export interface ServeConfig {
@@ -70,6 +72,54 @@ export function serveConfigFromEnv(env: Record<string, string | undefined> = {})
   };
 }
 
+/**
+ * In-memory provider keys for the key-sync route.
+ *
+ * Nothing is written to disk: a key lives only for the life of the process and is
+ * lost on restart (the Panel re-syncs it). [reload] rebuilds the registry from the
+ * registry file plus every key seen so far, so a synced provider becomes active
+ * without a restart. The raw configs come from the file, so a provider that was
+ * dropped for a missing key is still accepted by the allowlist.
+ */
+class MemoryKeyStore implements KeyStore {
+  private readonly keys = new Map<string, string>();
+
+  private constructor(
+    private readonly registryPath: string,
+    private readonly mode: RoutingMode,
+    private readonly configs: ProviderConfig[],
+  ) {}
+
+  static async create(registryPath: string, mode: RoutingMode): Promise<MemoryKeyStore> {
+    const file = await loadRegistryFile(registryPath);
+    return new MemoryKeyStore(registryPath, mode, file.providers);
+  }
+
+  async save(entries: Record<string, string>): Promise<void> {
+    for (const [id, key] of Object.entries(entries)) {
+      if (this.configs.some((p) => p.id === id)) this.keys.set(id, key);
+    }
+  }
+
+  async reload(): Promise<Registry> {
+    const env: Record<string, string | undefined> = { ...process.env };
+    for (const [id, key] of this.keys) {
+      const config = this.configs.find((p) => p.id === id);
+      if (config) env[config.apiKeyEnv] = key;
+    }
+    return loadRegistry({ path: this.registryPath, env, mode: this.mode });
+  }
+
+  providerConfigs(): ProviderConfig[] {
+    return this.configs;
+  }
+}
+
+/** True when the server binds to the loopback interface only. */
+function isLoopbackHost(host: string): boolean {
+  return host === '127.0.0.1' || host === '::1' || host === 'localhost';
+}
+
 function readBody(req: IncomingMessage): Promise<Buffer> {
   return new Promise((resolveBody, rejectBody) => {
     const chunks: Buffer[] = [];
@@ -89,6 +139,9 @@ export async function startServeServer(config: ServeConfig): Promise<RunningServ
   const base = await loadRegistry({ path: config.registryPath, env: process.env });
   const mesh = createModeMesh({ registry: base, mode: config.mode });
   const tokens = new Set([config.token]);
+  // Key sync is offered only on loopback; a Router bound to 0.0.0.0 never exposes it.
+  const keyStore = await MemoryKeyStore.create(config.registryPath, config.mode);
+  const keySync = isLoopbackHost(config.host);
 
   const server = createServer((req, res) => {
     void (async () => {
@@ -107,7 +160,7 @@ export async function startServeServer(config: ServeConfig): Promise<RunningServ
           // the DOM typings.
           ...(body && body.length > 0 ? { body: new Uint8Array(body) } : {}),
         });
-        const response = await handleRequest(request, { mesh, tokens });
+        const response = await handleRequest(request, { mesh, tokens, keyStore, keySync });
         res.statusCode = response.status;
         response.headers.forEach((value, key) => res.setHeader(key, value));
         const buf = Buffer.from(await response.arrayBuffer());
