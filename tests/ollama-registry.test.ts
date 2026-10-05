@@ -16,11 +16,14 @@ async function load(name: string): Promise<unknown> {
   return JSON.parse(await readFile(resolve(REGISTRY_DIR, name), 'utf8'));
 }
 
-describe('Tariffia-owned Ollama registry', () => {
+describe('Tariffia-owned provider registry', () => {
   test('registry/ollama.json loads and validates', async () => {
     const raw = await load('ollama.json');
     const validated = validateRegistryFile(raw);
-    assert.equal(validated.providers.length, 1);
+    assert.deepEqual(
+      validated.providers.map((p) => p.id).sort(),
+      ['deepinfra', 'ollama', 'openrouter'],
+    );
     assert.equal(validated.providers[0]?.id, 'ollama');
   });
 

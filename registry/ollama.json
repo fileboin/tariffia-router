@@ -1,20 +1,25 @@
 {
   "$comment": [
-    "Tariffia Router — Ollama provider registry.",
-    "This is a real, validated registry that can be loaded by the core.",
-    "Ollama runs locally; no credential is required (apiKeyOptional).",
-    "Prices are recorded explicitly as 0/0 because local inference has no",
-    "per-token cost. FREE_ONLY classifies a model as free ONLY from this",
-    "explicit 0/0 pricing, never from the provider or model name.",
+    "Tariffia Router — provider registry.",
+    "Contains multiple providers: Ollama, OpenRouter, DeepInfra.",
+    "This file is data, not code: adding a provider/model of an existing kind",
+    "does not require a core change.",
     "",
-    "No model is declared 'free' by omission: every model below carries an",
-    "explicit price of { inPerMTok: 0, outPerMTok: 0 }.",
+    "Credentials are referenced only by environment-variable NAME (apiKeyEnv);",
+    "no key value is ever stored here.",
     "",
-    "Model entries are marked with \"unverified\": true where the model may not",
-    "be installed on a given machine. Ollama serves only models the user has",
-    "pulled, so a listed model is not guaranteed to be present. Replace these",
-    "with the models you actually have; the list is a starting point, not a",
-    "claim about your installation."
+    "A model is classified free ONLY from an explicit 0/0 price, never from its",
+    "name or provider.",
+    "",
+    "OpenRouter free models were read live from https://openrouter.ai/api/v1/models",
+    "where pricing.prompt == \"0\" and pricing.completion == \"0\" (verified 2026-10-05).",
+    "DeepInfra models were read live from https://api.deepinfra.com/v1/openai/models",
+    "(context_length and pricing verified 2026-10-05).",
+    "",
+    "Capabilities listed are only those the source explicitly reported: 'text' for",
+    "all text-in models, 'vision' where image input is supported, and 'tools' where",
+    "the OpenRouter API lists 'tools' in supported_parameters. Nothing else is",
+    "inferred. Third-party cloud providers are capped at maxPrivacy 'public'."
   ],
   "providers": [
     {
@@ -44,6 +49,182 @@
           "languages": { "*": 0.6 },
           "note": "EXAMPLE/UNVERIFIED: only usable if this model has been pulled locally.",
           "unverified": true
+        }
+      ]
+    },
+    {
+      "id": "openrouter",
+      "kind": "openai-compat",
+      "baseUrl": "https://openrouter.ai/api/v1",
+      "apiKeyEnv": "OPENROUTER_API_KEY",
+      "maxPrivacy": "public",
+      "summary": "OpenRouter — one OpenAI-compatible endpoint across many providers.",
+      "freeTierNote": "Only models with an explicit 0/0 price from the OpenRouter model list are listed here as free.",
+      "models": [
+        {
+          "id": "inclusionai/ling-3.1-flash",
+          "capabilities": ["text", "tools"],
+          "contextWindow": 262144,
+          "price": { "inPerMTok": 0, "outPerMTok": 0 }
+        },
+        {
+          "id": "apodex/apodex-1.1-mini:free",
+          "capabilities": ["text", "tools"],
+          "contextWindow": 262144,
+          "price": { "inPerMTok": 0, "outPerMTok": 0 }
+        },
+        {
+          "id": "inclusionai/ling-3.0-flash-sante:free",
+          "capabilities": ["text", "tools"],
+          "contextWindow": 262144,
+          "price": { "inPerMTok": 0, "outPerMTok": 0 }
+        },
+        {
+          "id": "dots-studio/dots-3-note-preview:free",
+          "capabilities": ["text", "vision", "tools"],
+          "contextWindow": 512000,
+          "price": { "inPerMTok": 0, "outPerMTok": 0 }
+        },
+        {
+          "id": "liquid/lfm-2.5-2.6b:free",
+          "capabilities": ["text", "tools"],
+          "contextWindow": 65536,
+          "price": { "inPerMTok": 0, "outPerMTok": 0 }
+        },
+        {
+          "id": "nvidia/nemotron-3.5-lightning:free",
+          "capabilities": ["text", "tools"],
+          "contextWindow": 1000000,
+          "price": { "inPerMTok": 0, "outPerMTok": 0 }
+        },
+        {
+          "id": "thinkingmachines/inkling-small:free",
+          "capabilities": ["text", "vision", "tools"],
+          "contextWindow": 1048576,
+          "price": { "inPerMTok": 0, "outPerMTok": 0 }
+        },
+        {
+          "id": "poolside/laguna-s-2.1:free",
+          "capabilities": ["text", "tools"],
+          "contextWindow": 262144,
+          "price": { "inPerMTok": 0, "outPerMTok": 0 }
+        },
+        {
+          "id": "thinkingmachines/inkling:free",
+          "capabilities": ["text", "vision", "tools"],
+          "contextWindow": 1048576,
+          "price": { "inPerMTok": 0, "outPerMTok": 0 }
+        },
+        {
+          "id": "poolside/laguna-xs-2.1:free",
+          "capabilities": ["text", "tools"],
+          "contextWindow": 262144,
+          "price": { "inPerMTok": 0, "outPerMTok": 0 }
+        },
+        {
+          "id": "cohere/north-mini-code:free",
+          "capabilities": ["text", "tools"],
+          "contextWindow": 256000,
+          "price": { "inPerMTok": 0, "outPerMTok": 0 }
+        },
+        {
+          "id": "nvidia/nemotron-3.5-content-safety:free",
+          "capabilities": ["text", "vision"],
+          "contextWindow": 128000,
+          "price": { "inPerMTok": 0, "outPerMTok": 0 }
+        },
+        {
+          "id": "nvidia/nemotron-3-ultra-550b-a55b:free",
+          "capabilities": ["text", "tools"],
+          "contextWindow": 1000000,
+          "price": { "inPerMTok": 0, "outPerMTok": 0 }
+        },
+        {
+          "id": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+          "capabilities": ["text", "vision", "tools"],
+          "contextWindow": 256000,
+          "price": { "inPerMTok": 0, "outPerMTok": 0 }
+        },
+        {
+          "id": "google/gemma-4-26b-a4b-it:free",
+          "capabilities": ["text", "vision", "tools"],
+          "contextWindow": 262144,
+          "price": { "inPerMTok": 0, "outPerMTok": 0 }
+        },
+        {
+          "id": "google/gemma-4-31b-it:free",
+          "capabilities": ["text", "vision", "tools"],
+          "contextWindow": 262144,
+          "price": { "inPerMTok": 0, "outPerMTok": 0 }
+        },
+        {
+          "id": "google/lyria-3-pro-preview",
+          "capabilities": ["text", "vision"],
+          "contextWindow": 1048576,
+          "price": { "inPerMTok": 0, "outPerMTok": 0 }
+        },
+        {
+          "id": "google/lyria-3-clip-preview",
+          "capabilities": ["text", "vision"],
+          "contextWindow": 1048576,
+          "price": { "inPerMTok": 0, "outPerMTok": 0 }
+        },
+        {
+          "id": "nvidia/nemotron-3-super-120b-a12b:free",
+          "capabilities": ["text", "tools"],
+          "contextWindow": 262144,
+          "price": { "inPerMTok": 0, "outPerMTok": 0 }
+        },
+        {
+          "id": "openrouter/free",
+          "capabilities": ["text", "vision", "tools"],
+          "contextWindow": 200000,
+          "price": { "inPerMTok": 0, "outPerMTok": 0 }
+        }
+      ]
+    },
+    {
+      "id": "deepinfra",
+      "kind": "openai-compat",
+      "baseUrl": "https://api.deepinfra.com/v1/openai",
+      "apiKeyEnv": "DEEPINFRA_API_KEY",
+      "maxPrivacy": "public",
+      "summary": "DeepInfra — serverless OpenAI-compatible inference.",
+      "models": [
+        {
+          "id": "openai/gpt-oss-120b",
+          "capabilities": ["text"],
+          "contextWindow": 131072,
+          "price": { "inPerMTok": 0.037, "outPerMTok": 0.17 },
+          "priceVerifiedAt": "2026-10-05"
+        },
+        {
+          "id": "openai/gpt-oss-20b",
+          "capabilities": ["text"],
+          "contextWindow": 131072,
+          "price": { "inPerMTok": 0.03, "outPerMTok": 0.14 },
+          "priceVerifiedAt": "2026-10-05"
+        },
+        {
+          "id": "Qwen/Qwen3-32B",
+          "capabilities": ["text"],
+          "contextWindow": 40960,
+          "price": { "inPerMTok": 0.08, "outPerMTok": 0.28 },
+          "priceVerifiedAt": "2026-10-05"
+        },
+        {
+          "id": "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
+          "capabilities": ["text"],
+          "contextWindow": 131072,
+          "price": { "inPerMTok": 0.4, "outPerMTok": 0.4 },
+          "priceVerifiedAt": "2026-10-05"
+        },
+        {
+          "id": "deepseek-ai/DeepSeek-V4.1-Flash",
+          "capabilities": ["text"],
+          "contextWindow": 1048576,
+          "price": { "inPerMTok": 0.2, "outPerMTok": 0.6 },
+          "priceVerifiedAt": "2026-10-05"
         }
       ]
     }
