@@ -26,6 +26,7 @@ import { randomBytes } from 'node:crypto';
 import { createModeMesh } from './mode-mesh.js';
 import { loadRegistry, loadRegistryFile, DEFAULT_REGISTRY_PATH } from './registry-loader.js';
 import { handleRequest, type KeyStore } from './core/gateway.js';
+import { UsageMeter } from './core/usage.js';
 import type { Registry } from './core/registry.js';
 import type { ProviderConfig } from './core/types.js';
 import { modeFromEnv, type RoutingMode } from './routing-mode.js';
@@ -137,7 +138,9 @@ export async function startServeServer(config: ServeConfig): Promise<RunningServ
   // loadRegistry throws on missing/invalid registry. Apply the mode so the
   // server-owned enforcement (FREE_ONLY by default) is in place before serving.
   const base = await loadRegistry({ path: config.registryPath, env: process.env });
-  const mesh = createModeMesh({ registry: base, mode: config.mode });
+  // One memory-only usage meter for the process; records actual provider usage/cost.
+  const usage = new UsageMeter();
+  const mesh = createModeMesh({ registry: base, mode: config.mode, usage });
   const tokens = new Set([config.token]);
   // Key sync is offered only on loopback; a Router bound to 0.0.0.0 never exposes it.
   const keyStore = await MemoryKeyStore.create(config.registryPath, config.mode);
@@ -160,7 +163,7 @@ export async function startServeServer(config: ServeConfig): Promise<RunningServ
           // the DOM typings.
           ...(body && body.length > 0 ? { body: new Uint8Array(body) } : {}),
         });
-        const response = await handleRequest(request, { mesh, tokens, keyStore, keySync });
+        const response = await handleRequest(request, { mesh, tokens, keyStore, keySync, usage });
         res.statusCode = response.status;
         response.headers.forEach((value, key) => res.setHeader(key, value));
         const buf = Buffer.from(await response.arrayBuffer());

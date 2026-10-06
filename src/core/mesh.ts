@@ -12,6 +12,7 @@ import { ConcurrencyLimiter, type Slot } from './concurrency.js';
 import { HealthTracker } from './health.js';
 import { QuotaLedger } from './ledger.js';
 import { Router } from './router.js';
+import { UsageMeter } from './usage.js';
 import { costOf, hasCapabilities, isFree, maxPrivacyOf, quotaPoolKey, servesPrivacy, type Registry } from './registry.js';
 import { ProviderError, type Adapter, type FetchLike } from './providers/base.js';
 import { AnthropicAdapter } from './providers/anthropic.js';
@@ -81,6 +82,11 @@ export interface MeshOptions {
   ledger?: QuotaLedger;
   health?: HealthTracker;
   limiter?: ConcurrencyLimiter;
+  /**
+   * Optional usage/cost meter. When absent, no usage is recorded and behavior is
+   * unchanged. The meter is metadata-only (tokens, requests, cost per provider/model).
+   */
+  usage?: UsageMeter;
   fetchImpl?: FetchLike;
   adapters?: Record<string, Adapter>;
   /** Per-attempt timeout. The whole chain can take up to attempts × this. */
@@ -325,6 +331,7 @@ export class InferenceMesh {
   readonly ledger: QuotaLedger;
   readonly health: HealthTracker;
   readonly limits: ConcurrencyLimiter;
+  private readonly usage: UsageMeter | undefined;
   private _router: Router;
   private readonly adapters: Record<string, Adapter>;
   private readonly fetchImpl: FetchLike;
@@ -351,6 +358,7 @@ export class InferenceMesh {
     this.ledger = opts.ledger ?? new QuotaLedger();
     this.health = opts.health ?? new HealthTracker();
     this.limits = opts.limiter ?? new ConcurrencyLimiter();
+    this.usage = opts.usage;
     this._router = new Router(this._registry, {
       health: this.health,
       headroom: (key) => this.headroom.get(key),
@@ -842,6 +850,17 @@ export class InferenceMesh {
           if (candidate.provider.quota) {
             await this.ledger.record(poolKey, usage.total_tokens);
           }
+          // Usage/cost accounting (metadata only); cost is the one already computed.
+          this.usage?.record(
+            candidate.provider.id,
+            candidate.model.id,
+            {
+              inputTokens: usage.prompt_tokens,
+              outputTokens: usage.completion_tokens,
+              totalTokens: usage.total_tokens,
+            },
+            cost,
+          );
         }
         await this.ledger.flush();
         this.onEvent({ type: 'success', key, ms, costUsd: cost, ...(usage ? { usage } : {}) });
@@ -888,7 +907,7 @@ export class InferenceMesh {
     stream: ReadableStream<Uint8Array>,
     candidate: {
       key: string;
-      model: { price: { inPerMTok: number; outPerMTok: number } };
+      model: { id: string; price: { inPerMTok: number; outPerMTok: number } };
       provider: { id: string; quota?: Quota; quotaPool?: string };
     },
     trace: MeshTrace,
@@ -898,6 +917,7 @@ export class InferenceMesh {
     const ledger = this.ledger;
     const poolKey = quotaPoolKey(candidate.provider as { id: string; quotaPool?: string } as never);
     const onEvent = this.onEvent;
+    const usageMeter = this.usage;
     const model = candidate.model as unknown as Parameters<typeof costOf>[0];
     let tail = '';
     let usage: Usage | undefined;
@@ -929,6 +949,17 @@ export class InferenceMesh {
           if (candidate.provider.quota) {
             await ledger.record(poolKey, usage.total_tokens);
           }
+          // Usage/cost accounting (metadata only), only when the provider reported usage.
+          usageMeter?.record(
+            candidate.provider.id,
+            candidate.model.id,
+            {
+              inputTokens: usage.prompt_tokens,
+              outputTokens: usage.completion_tokens,
+              totalTokens: usage.total_tokens,
+            },
+            trace.cost_usd,
+          );
         }
         await ledger.flush();
         onEvent({

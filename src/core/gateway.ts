@@ -14,6 +14,7 @@
 // THIRD_PARTY_NOTICES.md.
 import { InferenceMesh } from './mesh.js';
 import { blendedPrice, maxPrivacyOf, type Registry } from './registry.js';
+import { UsageMeter } from './usage.js';
 import { MeshError, NoCandidateError, type ChatRequest, type ProviderConfig } from './types.js';
 import {
   anthropicRequestToInternal,
@@ -50,6 +51,11 @@ export interface GatewayOptions {
   allowedOrigins?: string[];
   /** Expose /healthz without a token. Off by default. */
   publicHealth?: boolean;
+  /**
+   * Optional usage/cost meter exposed through `GET /v1/usage`. When absent, the
+   * route returns 404. Metadata only (tokens, requests, cost per provider/model).
+   */
+  usage?: UsageMeter;
   /** Enables /setup and the key endpoints. Omit to disable setup entirely. */
   keyStore?: KeyStore;
   /**
@@ -294,6 +300,15 @@ export async function handleRequest(req: Request, opts: GatewayOptions): Promise
       },
     }));
     return json({ object: 'list', data: [...profiles, ...models] }, 200, ch);
+  }
+
+  // Bounded, memory-only usage/cost aggregates per provider/model (metadata only:
+  // tokens, request counts, cost). No raw ledger arrays, no keys, no request content.
+  if (url.pathname === '/v1/usage' && req.method === 'GET') {
+    if (!opts.usage) {
+      return json(errorBody('usage accounting is not enabled', 'not_found'), 404, ch);
+    }
+    return json(opts.usage.snapshot(), 200, ch);
   }
 
   if (url.pathname === '/v1/chat/completions' && req.method === 'POST') {

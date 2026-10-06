@@ -19,6 +19,14 @@ export { HealthTracker } from './health.js';
 export type { HealthOptions } from './health.js';
 export { QuotaLedger, MemoryStorage, utcDayKey } from './ledger.js';
 export type { LedgerStorage, LedgerRecord } from './ledger.js';
+export { UsageMeter } from './usage.js';
+export type {
+  UsageRecord,
+  UsageSnapshot,
+  UsageScope,
+  UsageTotals,
+  UsageSample,
+} from './usage.js';
 export { InferenceMesh, estimateTokens, parseModel } from './mesh.js';
 export type { MeshOptions, MeshEvent, StreamResult } from './mesh.js';
 export { registryFrom, validateRegistryFile } from './config.js';
