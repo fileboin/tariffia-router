@@ -36,10 +36,10 @@ const REGISTRY = JSON.stringify({
 const KEY = 'dummy-sync-key-value-123';
 const auth = { authorization: 'Bearer test-token' };
 
-async function start(over: Record<string, unknown> = {}) {
+async function start(over: Record<string, unknown> = {}, registry = REGISTRY) {
   const dir = await mkdtemp(join(tmpdir(), 'tariffia-keysync-'));
   const path = join(dir, 'registry.json');
-  await writeFile(path, REGISTRY, 'utf8');
+  await writeFile(path, registry, 'utf8');
   const config = {
     ...serveConfigFromEnv({ TARIFFIA_TOKEN: 'test-token' }),
     port: 0,
@@ -164,6 +164,120 @@ describe('provider key sync', () => {
       console.log = original.log;
       console.error = original.error;
       console.warn = original.warn;
+      await cleanup();
+    }
+  });
+});
+
+// A keyless provider (apiKeyOptional) alongside a normal, key-requiring one.
+const KEYLESS_REGISTRY = JSON.stringify({
+  providers: [
+    {
+      id: 'keylessprobe',
+      kind: 'openai-compat',
+      baseUrl: 'https://keylessprobe.test/v1',
+      apiKeyEnv: 'KEYLESS_PROBE_KEY',
+      apiKeyOptional: true,
+      maxPrivacy: 'public',
+      models: [
+        {
+          id: 'keyless-model',
+          capabilities: ['text'],
+          contextWindow: 8000,
+          price: { inPerMTok: 0, outPerMTok: 0 },
+        },
+      ],
+    },
+    {
+      id: 'paidprobe',
+      kind: 'openai-compat',
+      baseUrl: 'https://paidprobe.test/v1',
+      apiKeyEnv: 'PAID_PROBE_KEY',
+      maxPrivacy: 'public',
+      models: [
+        {
+          id: 'paid-model',
+          capabilities: ['text'],
+          contextWindow: 8000,
+          price: { inPerMTok: 0, outPerMTok: 0 },
+        },
+      ],
+    },
+  ],
+});
+
+describe('keyless provider key sync', () => {
+  test('apiKeyOptional + empty key => 200 (keyless state accepted)', async () => {
+    const { server, cleanup } = await start({}, KEYLESS_REGISTRY);
+    try {
+      const res = await put(keyUrl(server.url, 'keylessprobe'), { key: '' });
+      assert.equal(res.status, 200);
+      const body = (await res.json()) as { ok: boolean; provider: string; configured: boolean };
+      assert.deepEqual(body, { ok: true, provider: 'keylessprobe', configured: true });
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test('apiKeyOptional + a missing key field => 200 (same keyless state)', async () => {
+    const { server, cleanup } = await start({}, KEYLESS_REGISTRY);
+    try {
+      const res = await put(keyUrl(server.url, 'keylessprobe'), {});
+      assert.equal(res.status, 200);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test('apiKeyOptional + a non-empty key still succeeds', async () => {
+    const { server, cleanup } = await start({}, KEYLESS_REGISTRY);
+    try {
+      assert.equal((await put(keyUrl(server.url, 'keylessprobe'), { key: KEY })).status, 200);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test('apiKeyOptional:false + empty key is still rejected (400)', async () => {
+    const { server, cleanup } = await start({}, KEYLESS_REGISTRY);
+    try {
+      assert.equal((await put(keyUrl(server.url, 'paidprobe'), { key: '' })).status, 400);
+      assert.equal((await put(keyUrl(server.url, 'paidprobe'), {})).status, 400);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test('apiKeyOptional:false + non-empty key still succeeds', async () => {
+    const { server, cleanup } = await start({}, KEYLESS_REGISTRY);
+    try {
+      const res = await put(keyUrl(server.url, 'paidprobe'), { key: KEY });
+      assert.equal(res.status, 200);
+      const body = (await res.json()) as { ok: boolean; provider: string; configured: boolean };
+      assert.deepEqual(body, { ok: true, provider: 'paidprobe', configured: true });
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test('the keyless provider is active with no key, before and after sync', async () => {
+    const { server, cleanup } = await start({}, KEYLESS_REGISTRY);
+    try {
+      assert.ok((await healthProviders(server.url)).includes('keylessprobe'));
+      await put(keyUrl(server.url, 'keylessprobe'), { key: '' });
+      assert.ok((await healthProviders(server.url)).includes('keylessprobe'));
+      // The key-requiring sibling is unaffected: still dropped until a key is supplied.
+      assert.ok(!(await healthProviders(server.url)).includes('paidprobe'));
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test('an unknown provider is still rejected (404)', async () => {
+    const { server, cleanup } = await start({}, KEYLESS_REGISTRY);
+    try {
+      assert.equal((await put(keyUrl(server.url, 'nope'), { key: '' })).status, 404);
+    } finally {
       await cleanup();
     }
   });

@@ -258,8 +258,8 @@ export async function handleRequest(req: Request, opts: GatewayOptions): Promise
       return json(errorBody('provider key sync is disabled', 'forbidden'), 403, ch);
     }
     const providerId = decodeURIComponent(url.pathname.slice('/v1/providers/'.length, -'/key'.length));
-    const known = opts.keyStore.providerConfigs().some((p) => p.id === providerId);
-    if (!known) {
+    const provider = opts.keyStore.providerConfigs().find((p) => p.id === providerId);
+    if (!provider) {
       return json(errorBody(`unknown provider '${providerId}'`, 'not_found'), 404, ch);
     }
     let body: { key?: unknown };
@@ -269,7 +269,9 @@ export async function handleRequest(req: Request, opts: GatewayOptions): Promise
       return json(errorBody('request body is not valid JSON', 'invalid_request'), 400, ch);
     }
     const key = body && typeof body.key === 'string' ? body.key : '';
-    if (key.length === 0) {
+    // A keyless provider (apiKeyOptional) takes no credential, so an empty key is a valid
+    // "no key required" state. Every other provider still requires a non-empty key.
+    if (key.length === 0 && !provider.apiKeyOptional) {
       return json(errorBody('`key` (string) is required', 'invalid_request'), 400, ch);
     }
     await opts.keyStore.save({ [providerId]: key });
