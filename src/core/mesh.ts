@@ -328,6 +328,8 @@ interface AttemptContext {
 
 export class InferenceMesh {
   private _registry: Registry;
+  /** Process-local tunnel readiness. Ollama fails closed until explicitly enabled. */
+  private ollamaAvailable = false;
   readonly ledger: QuotaLedger;
   readonly health: HealthTracker;
   readonly limits: ConcurrencyLimiter;
@@ -414,6 +416,11 @@ export class InferenceMesh {
       health: this.health,
       headroom: (key) => this.headroom.get(key),
     });
+  }
+
+  /** Set the process-local availability of the Ollama provider (not persisted). */
+  setOllamaAvailable(available: boolean): void {
+    this.ollamaAvailable = available;
   }
 
   private routeFor(req: ChatRequest): RouteRequest {
@@ -546,6 +553,19 @@ export class InferenceMesh {
     return { ranked: [...free, ...paid], rejected: decision.rejected, profile: decision.profile };
   }
 
+  /** Exclude only Ollama while its Android-to-VPS SSH tunnel is unavailable. */
+  private enforceOllamaAvailability(decision: RouteDecision): RouteDecision {
+    if (this.ollamaAvailable) return decision;
+
+    const rejected = [...decision.rejected];
+    const ranked = decision.ranked.filter((scored) => {
+      if (scored.candidate.provider.id !== 'ollama') return true;
+      rejected.push({ key: scored.candidate.key, reason: 'runtime: Ollama tunnel unavailable' });
+      return false;
+    });
+    return { ...decision, ranked, rejected };
+  }
+
   private async run(
     req: ChatRequest,
     signal: AbortSignal | undefined,
@@ -558,6 +578,7 @@ export class InferenceMesh {
     // choice. This never downgrades a requirement — the union is a hard filter.
     const capabilityReq = withRequiredCapabilities(routeReq, analysis.requiredCapabilities);
     let decision = this.router.route(capabilityReq);
+    decision = this.enforceOllamaAvailability(decision);
     if (this.enforceFreeOnly) decision = this.enforceFreeOnlyDecision(decision);
     // FREE_FIRST ordering, applied after the FREE_ONLY filter (which, under
     // FREE_ONLY, leaves only free candidates, so this is a no-op there). The

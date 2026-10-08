@@ -128,6 +128,7 @@ describe('FREE_ONLY treats only explicit 0/0 models as free', () => {
       fetchImpl: fetch,
       enforceFreeOnly: true,
     });
+    mesh.setOllamaAvailable(true);
     await assert.rejects(
       () => mesh.chat({ model: 'mesh/free', messages: [{ role: 'user', content: 'x' }] }),
       (err: unknown) => err instanceof NoCandidateError,
@@ -143,6 +144,7 @@ describe('FREE_ONLY treats only explicit 0/0 models as free', () => {
       fetchImpl: fetch,
       enforceFreeOnly: true,
     });
+    mesh.setOllamaAvailable(true);
     const res = await mesh.chat({ model: 'mesh/free', messages: [{ role: 'user', content: 'hi' }] });
     assert.ok(res.mesh?.served_by.startsWith('ollama/'));
     assert.ok(calls[0]?.url.startsWith('http://127.0.0.1:11434/v1/'));

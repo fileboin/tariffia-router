@@ -66,6 +66,7 @@ describe('Ollama availability filter', () => {
     const { fetch, calls } = fakeFetch(() => okChat('ok'));
     // Only llama3.2 is installed, so the request must go there, never to the coder model.
     const mesh = new InferenceMesh({ registry: filtered, fetchImpl: fetch });
+    mesh.setOllamaAvailable(true);
     const res = await mesh.chat({ model: 'mesh/free', messages: [{ role: 'user', content: 'x' }] });
     assert.equal(res.mesh?.served_by, 'ollama/llama3.2');
     assert.ok(!calls.some((c) => (c.body as { model?: string })?.model === 'qwen2.5-coder:7b'));
@@ -78,6 +79,7 @@ describe('Ollama availability filter', () => {
     assert.equal(filtered.candidates.length, 0);
     const { fetch } = fakeFetch(() => okChat('ok'));
     const mesh = new InferenceMesh({ registry: filtered, fetchImpl: fetch, enforceFreeOnly: true });
+    mesh.setOllamaAvailable(true);
     await assert.rejects(
       () => mesh.chat({ model: 'mesh/free', messages: [{ role: 'user', content: 'x' }] }),
       (err: unknown) => err instanceof NoCandidateError,
@@ -138,6 +140,7 @@ describe('Ollama availability filter', () => {
     assert.ok(filtered.candidates.some((c) => c.key === 'ollama/paid-local'), 'installed paid model kept');
     const { fetch, calls } = fakeFetch(() => okChat('ok'));
     const mesh = new InferenceMesh({ registry: filtered, fetchImpl: fetch, enforceFreeOnly: true });
+    mesh.setOllamaAvailable(true);
     await assert.rejects(
       () => mesh.chat({ model: 'mesh/free', messages: [{ role: 'user', content: 'x' }] }),
       (err: unknown) => err instanceof NoCandidateError,
