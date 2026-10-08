@@ -126,7 +126,11 @@ describe('BALANCED routes by its explicit configuration', () => {
     const registry = new Registry(fixtureProviders(), { env: FIXTURE_ENV });
     const regBest = registry.withProfiles({}, 'best');
     const { fetch: bf } = fakeFetch(() => okChat('ok'));
-    const best = new (await import('../src/core/mesh.js')).InferenceMesh({ registry: regBest, fetchImpl: bf });
+    const best = new (await import('../src/core/mesh.js')).InferenceMesh({
+      registry: regBest,
+      fetchImpl: bf,
+      maxPricePerMTok: 15,
+    });
     const bestRes = await best.chat({ model: 'mesh/best', messages: [user] });
     assert.equal(bestRes.mesh?.served_by, 'paid/paid-pro', 'best is quality-heavy and picks the paid model');
   });
@@ -142,7 +146,11 @@ describe('mode layer is opt-in and does not change default behavior', () => {
   test('without createModeMesh, the existing default (free profile) is unchanged', async () => {
     const registry = new Registry(fixtureProviders(), { env: FIXTURE_ENV });
     const { fetch, calls } = fakeFetch(() => okChat('ok'));
-    const mesh = new (await import('../src/core/mesh.js')).InferenceMesh({ registry, fetchImpl: fetch });
+    const mesh = new (await import('../src/core/mesh.js')).InferenceMesh({
+      registry,
+      fetchImpl: fetch,
+      maxPricePerMTok: 15,
+    });
     const res = await mesh.chat({ model: 'mesh/free', messages: [user] });
     assert.equal(res.mesh?.served_by, 'alpha/alpha-free');
     // No enforcement: a pin to paid is honoured, as before the mode layer.

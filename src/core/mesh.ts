@@ -11,7 +11,7 @@ import { resolveClaudeRouting, type ClaudeFamilyPolicy } from './claude-family.j
 import { ConcurrencyLimiter, type Slot } from './concurrency.js';
 import { HealthTracker } from './health.js';
 import { QuotaLedger } from './ledger.js';
-import { Router } from './router.js';
+import { priceCapRejectionReason, Router } from './router.js';
 import { UsageMeter } from './usage.js';
 import { costOf, hasCapabilities, isFree, maxPrivacyOf, quotaPoolKey, servesPrivacy, type Registry } from './registry.js';
 import { ProviderError, type Adapter, type FetchLike } from './providers/base.js';
@@ -100,6 +100,12 @@ export interface MeshOptions {
    */
   concurrencyWaitMs?: number;
   onEvent?: (e: MeshEvent) => void;
+  /**
+   * Server-owned maximum USD rate per 1M input AND output tokens. Missing or
+   * invalid means only explicitly free 0/0 candidates are eligible. This is
+   * not a per-request spending budget.
+   */
+  maxPricePerMTok?: number;
   /**
    * Server-authoritative FREE_ONLY mode. Set by the server from its own
    * configuration; never derived from a request. When true, no request — pin or
@@ -340,6 +346,7 @@ export class InferenceMesh {
   private readonly timeoutMs: number;
   private readonly maxAttempts: number;
   private readonly concurrencyWaitMs: number;
+  private readonly maxPricePerMTok: number | undefined;
   private readonly onEvent: (e: MeshEvent) => void;
   private readonly enforceFreeOnly: boolean;
   private readonly freeFirst: boolean;
@@ -361,9 +368,11 @@ export class InferenceMesh {
     this.health = opts.health ?? new HealthTracker();
     this.limits = opts.limiter ?? new ConcurrencyLimiter();
     this.usage = opts.usage;
+    this.maxPricePerMTok = opts.maxPricePerMTok;
     this._router = new Router(this._registry, {
       health: this.health,
       headroom: (key) => this.headroom.get(key),
+      maxPricePerMTok: this.maxPricePerMTok,
     });
     this.fetchImpl = opts.fetchImpl ?? ((input, init) => fetch(input, init));
     this.timeoutMs = opts.timeoutMs ?? 60_000;
@@ -415,6 +424,7 @@ export class InferenceMesh {
     this._router = new Router(filtered, {
       health: this.health,
       headroom: (key) => this.headroom.get(key),
+      maxPricePerMTok: this.maxPricePerMTok,
     });
   }
 
@@ -706,6 +716,11 @@ export class InferenceMesh {
 
   private guardReason(scored: ScoredCandidate, ctx: AttemptContext): string | null {
     const { candidate } = scored;
+
+    // Repeat the server-owned rate cap at the execution boundary so a pin or a
+    // future routing-path change cannot hand an over-cap model to an adapter.
+    const priceRejection = priceCapRejectionReason(candidate.model, this.maxPricePerMTok);
+    if (priceRejection) return priceRejection;
 
     // FREE_ONLY: a non-free model must never reach an adapter. Checked first
     // because it is the hard safety guarantee.

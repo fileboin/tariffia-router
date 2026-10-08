@@ -193,6 +193,7 @@ function meshWith(fetchImpl: ReturnType<typeof fakeFetch>['fetch'], usage: Usage
   return new InferenceMesh({
     registry: new Registry(fixtureProviders(), { env: FIXTURE_ENV }),
     fetchImpl,
+    maxPricePerMTok: 100,
     ledger: new QuotaLedger(new MemoryStorage(), () => 0),
     usage,
   });

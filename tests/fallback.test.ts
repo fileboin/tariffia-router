@@ -36,6 +36,7 @@ function meshWith(providers: ProviderConfig[], responder: Responder, opts: { enf
   const mesh = new InferenceMesh({
     registry: new Registry(providers, { env }),
     fetchImpl: fetch,
+    maxPricePerMTok: 100,
     ...(opts.enforceFreeOnly ? { enforceFreeOnly: true } : {}),
     ...(opts.events ? { onEvent: (e) => opts.events!.push(e) } : {}),
   });

@@ -11,6 +11,12 @@ function registry(env: Record<string, string | undefined> = FIXTURE_ENV): Regist
   return new Registry(fixtureProviders(), { env });
 }
 
+const paidRateCap = 100;
+
+function router(): Router {
+  return new Router(registry(), { maxPricePerMTok: paidRateCap });
+}
+
 describe('registry loading', () => {
   test('drops a provider whose key is missing, and says so', () => {
     const r = new Registry(fixtureProviders(), { env: { ALPHA_KEY: 'k', PAID_KEY: 'k' } });
@@ -124,7 +130,7 @@ function mkProvider(id: string) {
 
 describe('router — hard filters', () => {
   test('privacy is a filter, not a preference', () => {
-    const d = new Router(registry()).route({ mesh: 'best', privacy: 'highly_confidential' });
+    const d = router().route({ mesh: 'best', privacy: 'highly_confidential' });
     assert.deepEqual(
       d.ranked.map((r) => r.candidate.key),
       ['paid/paid-pro'],
@@ -133,7 +139,7 @@ describe('router — hard filters', () => {
   });
 
   test('a model lacking the capability is excluded, not merely ranked lower', () => {
-    const d = new Router(registry()).route({ mesh: 'best', capabilities: ['vision'] });
+    const d = router().route({ mesh: 'best', capabilities: ['vision'] });
     assert.deepEqual(
       d.ranked.map((r) => r.candidate.key),
       ['beta/beta-free'],
@@ -142,7 +148,7 @@ describe('router — hard filters', () => {
   });
 
   test('minContext excludes small windows', () => {
-    const d = new Router(registry()).route({ mesh: 'best', minContext: 300_000 });
+    const d = router().route({ mesh: 'best', minContext: 300_000 });
     assert.deepEqual(
       d.ranked.map((r) => r.candidate.key),
       ['paid/paid-pro'],
@@ -150,17 +156,17 @@ describe('router — hard filters', () => {
   });
 
   test("the 'free' profile excludes paid models entirely", () => {
-    const d = new Router(registry()).route({ mesh: 'free' });
+    const d = router().route({ mesh: 'free' });
     assert.ok(!d.ranked.some((r) => r.candidate.key === 'paid/paid-pro'));
     assert.ok(d.rejected.some((r) => r.key === 'paid/paid-pro' && r.reason.includes('not free')));
   });
 
   test('an unknown profile is an error, not a silent default', () => {
-    assert.throws(() => new Router(registry()).route({ mesh: 'nope' }), /unknown mesh profile/);
+    assert.throws(() => router().route({ mesh: 'nope' }), /unknown mesh profile/);
   });
 
   test("a pin overrides the profile's price limit, but not privacy", () => {
-    const router = new Router(registry());
+    const router = new Router(registry(), { maxPricePerMTok: paidRateCap });
     // 'free' is the default profile; pinning a paid model must still work.
     const pinned = router.route({ mesh: 'free', pin: 'paid/paid-pro' });
     assert.deepEqual(
@@ -174,7 +180,7 @@ describe('router — hard filters', () => {
   });
 
   test('a pin that names nothing yields no candidates and says why', () => {
-    const d = new Router(registry()).route({ pin: 'ghost/model' });
+    const d = router().route({ pin: 'ghost/model' });
     assert.equal(d.ranked.length, 0);
     assert.ok(d.rejected.some((r) => r.reason.includes('no such provider/model')));
   });
@@ -182,7 +188,7 @@ describe('router — hard filters', () => {
 
 describe('router — language routing', () => {
   test('the same profile picks a different model per language', () => {
-    const router = new Router(registry());
+    const router = new Router(registry(), { maxPricePerMTok: paidRateCap });
     // alpha and beta have identical quality and price; only the language term differs.
     const en = router.route({ mesh: 'free', language: 'en' }).ranked[0]?.candidate.key;
     const ja = router.route({ mesh: 'free', language: 'ja' }).ranked[0]?.candidate.key;
@@ -191,12 +197,12 @@ describe('router — language routing', () => {
   });
 
   test('a regional tag falls back to its base language', () => {
-    const ranked = new Router(registry()).route({ mesh: 'free', language: 'ja-JP' }).ranked;
+    const ranked = router().route({ mesh: 'free', language: 'ja-JP' }).ranked;
     assert.equal(ranked[0]?.candidate.key, 'beta/beta-free');
   });
 
   test('an unlisted language uses the default score, not zero', () => {
-    const ranked = new Router(registry()).route({ mesh: 'free', language: 'sw' }).ranked;
+    const ranked = router().route({ mesh: 'free', language: 'sw' }).ranked;
     for (const r of ranked) assert.ok((r.terms['language'] ?? 0) > 0);
   });
 });
@@ -206,7 +212,7 @@ describe('router — health', () => {
     const clock = fakeClock();
     const health = new HealthTracker({ failureThreshold: 1 }, clock.now);
     health.failure('alpha/alpha-free');
-    const d = new Router(registry(), { health }).route({ mesh: 'free', language: 'en' });
+    const d = new Router(registry(), { health, maxPricePerMTok: paidRateCap }).route({ mesh: 'free', language: 'en' });
     assert.equal(d.ranked[0]?.candidate.key, 'beta/beta-free');
     assert.ok(d.rejected.some((r) => r.key === 'alpha/alpha-free' && r.reason.startsWith('health')));
   });
@@ -215,7 +221,7 @@ describe('router — health', () => {
     const clock = fakeClock();
     const health = new HealthTracker({ failureThreshold: 1 }, clock.now);
     for (const k of ['alpha/alpha-free', 'beta/beta-free', 'keyless/open-tier']) health.failure(k);
-    const d = new Router(registry(), { health }).route({ mesh: 'free' });
+    const d = new Router(registry(), { health, maxPricePerMTok: paidRateCap }).route({ mesh: 'free' });
     assert.equal(d.ranked.length, 3, 'a probably-down provider still beats no provider');
   });
 
@@ -231,8 +237,8 @@ describe('router — health', () => {
 
 describe('router — determinism', () => {
   test('identical scores break ties by key, not by registry order', () => {
-    const forward = new Router(new Registry(fixtureProviders(), { env: FIXTURE_ENV })).route({ mesh: 'free' });
-    const reversed = new Router(new Registry(fixtureProviders().reverse(), { env: FIXTURE_ENV })).route({ mesh: 'free' });
+    const forward = new Router(new Registry(fixtureProviders(), { env: FIXTURE_ENV }), { maxPricePerMTok: paidRateCap }).route({ mesh: 'free' });
+    const reversed = new Router(new Registry(fixtureProviders().reverse(), { env: FIXTURE_ENV }), { maxPricePerMTok: paidRateCap }).route({ mesh: 'free' });
     assert.deepEqual(
       forward.ranked.map((r) => r.candidate.key),
       reversed.ranked.map((r) => r.candidate.key),

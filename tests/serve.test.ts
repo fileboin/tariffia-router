@@ -61,11 +61,20 @@ describe('tariffia serve', () => {
   test('3. mode defaults safely to FREE_ONLY and is server-owned', async () => {
     const config = serveConfigFromEnv({}); // no TARIFFIA_MODE
     assert.equal(config.mode, 'FREE_ONLY');
+    assert.equal(config.maxPricePerMTok, undefined, 'no cap means paid candidates are disabled');
     const r = await startServer({ mode: 'FREE_ONLY' });
     assert.equal(r.config.mode, 'FREE_ONLY');
     // /healthz (authenticated) exposes no mode leakage but answers.
     const res = await fetch(`${r.url}/healthz`, { headers: auth });
     assert.equal(res.status, 200);
+  });
+
+  test('server rate cap is parsed from its environment and is not request-controlled', () => {
+    assert.equal(serveConfigFromEnv({ TARIFFIA_MAX_PRICE_PER_MTOK: '1.25' }).maxPricePerMTok, 1.25);
+    assert.equal(serveConfigFromEnv({ TARIFFIA_MAX_PRICE_PER_MTOK: '0' }).maxPricePerMTok, 0);
+    for (const raw of ['', 'not-a-price', '0x10', '-0.01', 'NaN', 'Infinity', '-Infinity']) {
+      assert.equal(serveConfigFromEnv({ TARIFFIA_MAX_PRICE_PER_MTOK: raw }).maxPricePerMTok, undefined);
+    }
   });
 
   test('4. Ollama is present in the served model list', async () => {
