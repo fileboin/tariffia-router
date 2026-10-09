@@ -76,6 +76,7 @@ describe('runtime registry loader', () => {
     const registry = await loadRegistry({ env: {} });
     const { fetch, calls } = fakeFetch(() => okChat('local ok'));
     const mesh = new InferenceMesh({ registry, fetchImpl: fetch, enforceFreeOnly: true });
+    mesh.setOllamaAvailable(true);
     const res = await mesh.chat({ model: 'mesh/free', messages: [{ role: 'user', content: 'hi' }] });
     assert.ok(res.mesh?.served_by.startsWith('ollama/'), 'routes to a loaded Ollama model');
     assert.ok(calls[0]?.url.startsWith('http://127.0.0.1:11434/v1/'));

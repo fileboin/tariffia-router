@@ -24,6 +24,8 @@ Usage:
 Environment:
   TARIFFIA_REGISTRY   registry file (default: registry/ollama.json)
   TARIFFIA_MODE       FREE_ONLY | BALANCED | FREE_FIRST | CUSTOM (default FREE_ONLY)
+  TARIFFIA_MAX_PRICE_PER_MTOK  maximum USD per 1M input AND output tokens;
+                              absent/invalid disables paid candidates
   TARIFFIA_HOST       bind host (default 127.0.0.1)
   TARIFFIA_PORT       bind port (default 8910)
   TARIFFIA_TOKEN      bearer token clients must present

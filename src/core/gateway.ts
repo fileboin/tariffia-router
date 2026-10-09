@@ -249,6 +249,32 @@ export async function handleRequest(req: Request, opts: GatewayOptions): Promise
     );
   }
 
+  // Loopback-only runtime control for the embedded Panel's SSH tunnel. The global Router auth
+  // check above still applies; keySync is set by serve.ts only for loopback binds.
+  if (url.pathname === '/internal/runtime/ollama-availability' && req.method === 'PUT') {
+    if (!opts.keySync) {
+      return json(errorBody('runtime provider control is disabled', 'forbidden'), 403, ch);
+    }
+    let body: unknown;
+    try {
+      body = await req.json();
+    } catch {
+      return json(errorBody('request body is not valid JSON', 'invalid_request'), 400, ch);
+    }
+    if (
+      typeof body !== 'object' ||
+      body === null ||
+      Array.isArray(body) ||
+      Object.keys(body).some((key) => key !== 'available') ||
+      typeof (body as { available?: unknown }).available !== 'boolean'
+    ) {
+      return json(errorBody('`available` (boolean) is required', 'invalid_request'), 400, ch);
+    }
+    const available = (body as { available: boolean }).available;
+    opts.mesh.setOllamaAvailable(available);
+    return json({ ok: true, provider: 'ollama', available }, 200, ch);
+  }
+
   // Narrow, authenticated provider-key sync. The key is held only by the injected
   // KeyStore (memory on the Node server), never returned, never logged, never
   // written here. Only provider IDs declared in the registry are accepted, and

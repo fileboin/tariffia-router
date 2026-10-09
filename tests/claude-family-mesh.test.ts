@@ -15,6 +15,7 @@ function mesh(over: Record<string, unknown> = {}) {
   const m = new InferenceMesh({
     registry: new Registry(fixtureProviders(), { env: FIXTURE_ENV }),
     fetchImpl: fetch,
+    maxPricePerMTok: 100,
     ...over,
   });
   return { m, calls };

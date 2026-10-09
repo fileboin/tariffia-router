@@ -148,7 +148,7 @@ describe('provider risk enforcement', () => {
       { env: { AVOID_P_KEY: 'a', PAID_OK_KEY: 'p' } },
     );
     const { fetch, calls } = fakeFetch(() => okChat('ok'));
-    const mesh = createModeMesh({ registry, mode: 'BALANCED', fetchImpl: fetch });
+    const mesh = createModeMesh({ registry, mode: 'BALANCED', fetchImpl: fetch, maxPricePerMTok: 100 });
     const res = await mesh.chat({ model: 'mesh/best', messages: [user] });
     assert.equal(res.mesh?.served_by, 'paid-ok/m', 'avoid filtered; the remaining provider serves');
     assert.ok(!calledHosts(calls).includes('avoid-p.test'));

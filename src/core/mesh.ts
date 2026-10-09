@@ -11,7 +11,7 @@ import { resolveClaudeRouting, type ClaudeFamilyPolicy } from './claude-family.j
 import { ConcurrencyLimiter, type Slot } from './concurrency.js';
 import { HealthTracker } from './health.js';
 import { QuotaLedger } from './ledger.js';
-import { Router } from './router.js';
+import { priceCapRejectionReason, Router } from './router.js';
 import { UsageMeter } from './usage.js';
 import { costOf, hasCapabilities, isFree, maxPrivacyOf, quotaPoolKey, servesPrivacy, type Registry } from './registry.js';
 import { ProviderError, type Adapter, type FetchLike } from './providers/base.js';
@@ -100,6 +100,12 @@ export interface MeshOptions {
    */
   concurrencyWaitMs?: number;
   onEvent?: (e: MeshEvent) => void;
+  /**
+   * Server-owned maximum USD rate per 1M input AND output tokens. Missing or
+   * invalid means only explicitly free 0/0 candidates are eligible. This is
+   * not a per-request spending budget.
+   */
+  maxPricePerMTok?: number;
   /**
    * Server-authoritative FREE_ONLY mode. Set by the server from its own
    * configuration; never derived from a request. When true, no request — pin or
@@ -328,6 +334,8 @@ interface AttemptContext {
 
 export class InferenceMesh {
   private _registry: Registry;
+  /** Process-local tunnel readiness. Ollama fails closed until explicitly enabled. */
+  private ollamaAvailable = false;
   readonly ledger: QuotaLedger;
   readonly health: HealthTracker;
   readonly limits: ConcurrencyLimiter;
@@ -338,6 +346,7 @@ export class InferenceMesh {
   private readonly timeoutMs: number;
   private readonly maxAttempts: number;
   private readonly concurrencyWaitMs: number;
+  private readonly maxPricePerMTok: number | undefined;
   private readonly onEvent: (e: MeshEvent) => void;
   private readonly enforceFreeOnly: boolean;
   private readonly freeFirst: boolean;
@@ -359,9 +368,11 @@ export class InferenceMesh {
     this.health = opts.health ?? new HealthTracker();
     this.limits = opts.limiter ?? new ConcurrencyLimiter();
     this.usage = opts.usage;
+    this.maxPricePerMTok = opts.maxPricePerMTok;
     this._router = new Router(this._registry, {
       health: this.health,
       headroom: (key) => this.headroom.get(key),
+      maxPricePerMTok: this.maxPricePerMTok,
     });
     this.fetchImpl = opts.fetchImpl ?? ((input, init) => fetch(input, init));
     this.timeoutMs = opts.timeoutMs ?? 60_000;
@@ -413,7 +424,13 @@ export class InferenceMesh {
     this._router = new Router(filtered, {
       health: this.health,
       headroom: (key) => this.headroom.get(key),
+      maxPricePerMTok: this.maxPricePerMTok,
     });
+  }
+
+  /** Set the process-local availability of the Ollama provider (not persisted). */
+  setOllamaAvailable(available: boolean): void {
+    this.ollamaAvailable = available;
   }
 
   private routeFor(req: ChatRequest): RouteRequest {
@@ -546,6 +563,19 @@ export class InferenceMesh {
     return { ranked: [...free, ...paid], rejected: decision.rejected, profile: decision.profile };
   }
 
+  /** Exclude only Ollama while its Android-to-VPS SSH tunnel is unavailable. */
+  private enforceOllamaAvailability(decision: RouteDecision): RouteDecision {
+    if (this.ollamaAvailable) return decision;
+
+    const rejected = [...decision.rejected];
+    const ranked = decision.ranked.filter((scored) => {
+      if (scored.candidate.provider.id !== 'ollama') return true;
+      rejected.push({ key: scored.candidate.key, reason: 'runtime: Ollama tunnel unavailable' });
+      return false;
+    });
+    return { ...decision, ranked, rejected };
+  }
+
   private async run(
     req: ChatRequest,
     signal: AbortSignal | undefined,
@@ -558,6 +588,7 @@ export class InferenceMesh {
     // choice. This never downgrades a requirement — the union is a hard filter.
     const capabilityReq = withRequiredCapabilities(routeReq, analysis.requiredCapabilities);
     let decision = this.router.route(capabilityReq);
+    decision = this.enforceOllamaAvailability(decision);
     if (this.enforceFreeOnly) decision = this.enforceFreeOnlyDecision(decision);
     // FREE_FIRST ordering, applied after the FREE_ONLY filter (which, under
     // FREE_ONLY, leaves only free candidates, so this is a no-op there). The
@@ -685,6 +716,11 @@ export class InferenceMesh {
 
   private guardReason(scored: ScoredCandidate, ctx: AttemptContext): string | null {
     const { candidate } = scored;
+
+    // Repeat the server-owned rate cap at the execution boundary so a pin or a
+    // future routing-path change cannot hand an over-cap model to an adapter.
+    const priceRejection = priceCapRejectionReason(candidate.model, this.maxPricePerMTok);
+    if (priceRejection) return priceRejection;
 
     // FREE_ONLY: a non-free model must never reach an adapter. Checked first
     // because it is the hard safety guarantee.

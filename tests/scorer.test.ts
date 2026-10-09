@@ -144,7 +144,7 @@ describe('scorer operates only on hard-filtered survivors', () => {
   const registry = () => new Registry(fixtureProviders(), { env: FIXTURE_ENV });
 
   test('an insufficient-context candidate is already filtered before scoring', () => {
-    const d = new Router(registry()).route({ mesh: 'best', minContext: 50000 });
+    const d = new Router(registry(), { maxPricePerMTok: 100 }).route({ mesh: 'best', minContext: 50000 });
     assert.ok(!d.ranked.some((r) => r.candidate.key === 'alpha/alpha-free'), 'alpha (8000) excluded');
     assert.ok(
       d.rejected.some((r) => r.key === 'alpha/alpha-free' && r.reason.startsWith('context')),
@@ -156,13 +156,13 @@ describe('scorer operates only on hard-filtered survivors', () => {
   test('an unavailable candidate is not selected', () => {
     const health = new HealthTracker({ failureThreshold: 1 }, () => 0);
     health.failure('alpha/alpha-free');
-    const d = new Router(registry(), { health }).route({ mesh: 'free', language: 'en' });
+    const d = new Router(registry(), { health, maxPricePerMTok: 100 }).route({ mesh: 'free', language: 'en' });
     assert.notEqual(d.ranked[0]?.candidate.key, 'alpha/alpha-free');
     assert.ok(d.rejected.some((r) => r.key === 'alpha/alpha-free' && r.reason.startsWith('health')));
   });
 
   test('pin behavior is unchanged (a pin still bypasses price-based scoring)', () => {
-    const d = new Router(registry()).route({ mesh: 'free', pin: 'paid/paid-pro' });
+    const d = new Router(registry(), { maxPricePerMTok: 100 }).route({ mesh: 'free', pin: 'paid/paid-pro' });
     assert.equal(d.ranked[0]?.candidate.key, 'paid/paid-pro');
   });
 

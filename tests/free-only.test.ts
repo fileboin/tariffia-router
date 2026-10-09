@@ -26,13 +26,14 @@ import {
  */
 const user = { role: 'user' as const, content: 'x' };
 
-function build(opts: { enforceFreeOnly?: boolean; responder?: Responder } = {}) {
+function build(opts: { enforceFreeOnly?: boolean; maxPricePerMTok?: number; responder?: Responder } = {}) {
   const { fetch, calls } = fakeFetch(opts.responder ?? (() => okChat('hi')));
   const mesh = new InferenceMesh({
     registry: new Registry(fixtureProviders(), { env: FIXTURE_ENV }),
     fetchImpl: fetch,
     ledger: new QuotaLedger(new MemoryStorage(), fakeClock().now),
     enforceFreeOnly: opts.enforceFreeOnly ?? false,
+    maxPricePerMTok: opts.maxPricePerMTok,
   });
   return { mesh, calls };
 }
@@ -116,20 +117,20 @@ describe('FREE_ONLY — server-authoritative enforcement', () => {
 
 describe('FREE_ONLY off — behavior is unchanged', () => {
   test('a pin to a paid model is honoured when FREE_ONLY is off', async () => {
-    const { mesh, calls } = build({ enforceFreeOnly: false });
+    const { mesh, calls } = build({ enforceFreeOnly: false, maxPricePerMTok: 15 });
     const res = await mesh.chat({ model: 'paid/paid-pro', messages: [user] });
     assert.equal(res.mesh?.served_by, 'paid/paid-pro');
     assert.equal(calls[0]?.url.startsWith('https://paid.test'), true);
   });
 
   test('mesh/best can still select the paid model when FREE_ONLY is off', async () => {
-    const { mesh } = build({ enforceFreeOnly: false });
+    const { mesh } = build({ enforceFreeOnly: false, maxPricePerMTok: 15 });
     const res = await mesh.chat({ model: 'mesh/best', messages: [user] });
     assert.equal(res.mesh?.served_by, 'paid/paid-pro');
   });
 
   test('body.mesh.pin to a paid model is honoured when FREE_ONLY is off', async () => {
-    const { mesh, calls } = build({ enforceFreeOnly: false });
+    const { mesh, calls } = build({ enforceFreeOnly: false, maxPricePerMTok: 15 });
     const res = await mesh.chat({
       model: 'mesh/free',
       messages: [user],
