@@ -1,6 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { test, describe, after } from 'node:test';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -74,6 +75,66 @@ describe('tariffia serve', () => {
     assert.equal(serveConfigFromEnv({ TARIFFIA_MAX_PRICE_PER_MTOK: '0' }).maxPricePerMTok, 0);
     for (const raw of ['', 'not-a-price', '0x10', '-0.01', 'NaN', 'Infinity', '-Infinity']) {
       assert.equal(serveConfigFromEnv({ TARIFFIA_MAX_PRICE_PER_MTOK: raw }).maxPricePerMTok, undefined);
+    }
+  });
+
+  test('server environment price cap blocks calls to an over-cap provider', async () => {
+    let providerCalls = 0;
+    const providerServer = createServer((_req, res) => {
+      providerCalls++;
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end('{}');
+    });
+    let registry: Awaited<ReturnType<typeof tempRegistry>> | undefined;
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        providerServer.once('error', reject);
+        providerServer.listen(0, '127.0.0.1', resolve);
+      });
+      const address = providerServer.address();
+      assert.ok(address && typeof address !== 'string');
+      registry = await tempRegistry(JSON.stringify({
+        providers: [{
+          id: 'cap-stub',
+          kind: 'openai-compat',
+          baseUrl: `http://127.0.0.1:${address.port}/v1`,
+          apiKeyEnv: 'CAP_STUB_API_KEY',
+          apiKeyOptional: true,
+          maxPrivacy: 'internal',
+          models: [{
+            id: 'over-cap',
+            capabilities: ['text'],
+            contextWindow: 8192,
+            price: { inPerMTok: 2, outPerMTok: 3 },
+            priceVerifiedAt: '2026-10-01',
+          }],
+        }],
+      }));
+
+      const config = serveConfigFromEnv({
+        TARIFFIA_TOKEN: 'test-token',
+        TARIFFIA_REGISTRY: registry.path,
+        TARIFFIA_MODE: 'BALANCED',
+        TARIFFIA_MAX_PRICE_PER_MTOK: '1',
+      });
+      const server = await startServer({ ...config, port: 0 });
+      const response = await fetch(`${server.url}/v1/chat/completions`, {
+        method: 'POST',
+        headers: { ...auth, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: 'cap-stub/over-cap',
+          messages: [{ role: 'user', content: 'hello' }],
+        }),
+      });
+
+      assert.equal(response.status, 503);
+      assert.equal(providerCalls, 0, 'the over-cap provider endpoint must not be called');
+    } finally {
+      if (providerServer.listening) {
+        await new Promise<void>((resolve) => providerServer.close(() => resolve()));
+      }
+      await registry?.cleanup();
     }
   });
 
