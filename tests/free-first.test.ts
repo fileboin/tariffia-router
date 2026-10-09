@@ -11,10 +11,14 @@ import { errorResponse, fakeFetch, FIXTURE_ENV, fixtureProviders, okChat, type R
 const user = { role: 'user' as const, content: 'x' };
 const paidCalled = (calls: Array<{ url: string }>) => calls.some((c) => c.url.includes('paid.test'));
 
-function meshFor(mode: 'FREE_FIRST' | 'FREE_ONLY' | 'BALANCED', responder?: Responder) {
+function meshFor(
+  mode: 'FREE_FIRST' | 'FREE_ONLY' | 'BALANCED',
+  responder?: Responder,
+  maxPricePerMTok?: number,
+) {
   const registry = new Registry(fixtureProviders(), { env: FIXTURE_ENV });
   const { fetch, calls } = fakeFetch(responder ?? (() => okChat('ok')));
-  const mesh = createModeMesh({ registry, mode, fetchImpl: fetch });
+  const mesh = createModeMesh({ registry, mode, fetchImpl: fetch, maxPricePerMTok });
   return { mesh, calls };
 }
 
@@ -38,7 +42,7 @@ describe('FREE_FIRST mode resolution', () => {
     // stayed BALANCED.
     const registry = new Registry(fixtureProviders(), { env: FIXTURE_ENV });
     const { fetch, calls } = fakeFetch(() => okChat('ok'));
-    const mesh = createModeMesh({ registry, mode: 'BALANCED', fetchImpl: fetch });
+    const mesh = createModeMesh({ registry, mode: 'BALANCED', fetchImpl: fetch, maxPricePerMTok: 15 });
     const body = { model: 'mesh/best', messages: [user], mode: 'FREE_FIRST', mesh: { mode: 'FREE_FIRST' } } as unknown as ChatRequest;
     const res = await mesh.chat(body);
     assert.equal(res.mesh?.served_by, 'paid/paid-pro', 'BALANCED selected paid; not switched to FREE_FIRST');
@@ -64,8 +68,10 @@ describe('FREE_FIRST ordering', () => {
 
   test('paid is used only after eligible free candidates cannot serve', async () => {
     // Every free provider fails; then the paid candidate serves.
-    const { mesh, calls } = meshFor('FREE_FIRST', (_call, n) =>
-      n <= 3 ? errorResponse(500, 'down') : okChat('paid ok'),
+    const { mesh, calls } = meshFor(
+      'FREE_FIRST',
+      (_call, n) => (n <= 3 ? errorResponse(500, 'down') : okChat('paid ok')),
+      15,
     );
     const res = await mesh.chat({ model: 'mesh/best', messages: [user] });
     assert.equal(res.mesh?.served_by, 'paid/paid-pro');
@@ -88,6 +94,7 @@ describe('FREE_FIRST ordering', () => {
       registry: new Registry([explicitPaid], { env: { EXPLICIT_PAID_KEY: 'k' } }),
       mode: 'FREE_FIRST',
       fetchImpl: fetch,
+      maxPricePerMTok: 1,
     });
     // It is the only candidate and it is paid, so it is used — but only because
     // no free candidate exists, and it is classified paid by its price.
@@ -121,6 +128,7 @@ describe('FREE_FIRST ordering', () => {
       registry: new Registry([freeNoVision, paidVision], { env: { FREE_TEXT_KEY: 'f', PAID_VISION_KEY: 'p' } }),
       mode: 'FREE_FIRST',
       fetchImpl: fetch,
+      maxPricePerMTok: 1,
     });
     const res = await mesh.chat({
       model: 'mesh/best',
@@ -130,7 +138,7 @@ describe('FREE_FIRST ordering', () => {
   });
 
   test('privacy/context filters still apply under FREE_FIRST', async () => {
-    const { mesh } = meshFor('FREE_FIRST');
+    const { mesh } = meshFor('FREE_FIRST', undefined, 15);
     // highly_confidential only the paid provider serves; free-first must fall through.
     const res = await mesh.chat({ model: 'mesh/best', messages: [user], mesh: { privacy: 'highly_confidential' } });
     assert.equal(res.mesh?.served_by, 'paid/paid-pro');
@@ -171,7 +179,7 @@ describe('FREE_FIRST does not weaken FREE_ONLY and leaves BALANCED unchanged', (
   test('BALANCED behavior is unchanged (can still select paid)', async () => {
     const registry = new Registry(fixtureProviders(), { env: FIXTURE_ENV });
     const { fetch } = fakeFetch(() => okChat('ok'));
-    const mesh = createModeMesh({ registry, mode: 'BALANCED', fetchImpl: fetch });
+    const mesh = createModeMesh({ registry, mode: 'BALANCED', fetchImpl: fetch, maxPricePerMTok: 15 });
     const res = await mesh.chat({ model: 'mesh/best', messages: [user] });
     assert.equal(res.mesh?.served_by, 'paid/paid-pro');
   });
@@ -179,7 +187,7 @@ describe('FREE_FIRST does not weaken FREE_ONLY and leaves BALANCED unchanged', (
   test('a plain mesh without freeFirst is unchanged (paid pin honoured)', async () => {
     const registry = new Registry(fixtureProviders(), { env: FIXTURE_ENV });
     const { fetch } = fakeFetch(() => okChat('ok'));
-    const mesh = new InferenceMesh({ registry, fetchImpl: fetch });
+    const mesh = new InferenceMesh({ registry, fetchImpl: fetch, maxPricePerMTok: 15 });
     const res = await mesh.chat({ model: 'paid/paid-pro', messages: [user] });
     assert.equal(res.mesh?.served_by, 'paid/paid-pro');
   });

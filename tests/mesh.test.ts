@@ -29,6 +29,7 @@ function mesh(
     fetchImpl: fetch,
     ledger: new QuotaLedger(new MemoryStorage(), clock.now),
     health: new HealthTracker({}, clock.now),
+    maxPricePerMTok: 100,
     ...opts,
   });
   return { m, calls, clock, registry };

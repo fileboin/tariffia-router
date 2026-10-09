@@ -34,6 +34,8 @@ import { modeFromEnv, type RoutingMode } from './routing-mode.js';
 export interface ServeConfig {
   registryPath: string;
   mode: RoutingMode;
+  /** Server-owned maximum USD rate per 1M input and output tokens. */
+  maxPricePerMTok?: number;
   host: string;
   port: number;
   token: string;
@@ -58,14 +60,24 @@ function intFromEnv(raw: string | undefined, fallback: number): number {
   return n;
 }
 
+/** Invalid or absent caps stay undefined, which makes paid candidates ineligible. */
+function maxPricePerMTokFromEnv(raw: string | undefined): number | undefined {
+  const value = raw?.trim();
+  if (!value || !/^(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(value)) return undefined;
+  const cap = Number(value);
+  return Number.isFinite(cap) && cap >= 0 ? cap : undefined;
+}
+
 /** Build the effective config from a server-owned environment object. */
 export function serveConfigFromEnv(env: Record<string, string | undefined> = {}): ServeConfig {
   const mode = modeFromEnv(env);
   const supplied = (env['TARIFFIA_TOKEN'] ?? '').trim();
   const token = supplied.length > 0 ? supplied : randomBytes(32).toString('hex');
+  const maxPricePerMTok = maxPricePerMTokFromEnv(env['TARIFFIA_MAX_PRICE_PER_MTOK']);
   return {
     registryPath: env['TARIFFIA_REGISTRY'] ?? DEFAULT_REGISTRY_PATH,
     mode,
+    ...(maxPricePerMTok === undefined ? {} : { maxPricePerMTok }),
     host: env['TARIFFIA_HOST'] ?? '127.0.0.1',
     port: intFromEnv(env['TARIFFIA_PORT'], 8910),
     token,
@@ -140,7 +152,12 @@ export async function startServeServer(config: ServeConfig): Promise<RunningServ
   const base = await loadRegistry({ path: config.registryPath, env: process.env });
   // One memory-only usage meter for the process; records actual provider usage/cost.
   const usage = new UsageMeter();
-  const mesh = createModeMesh({ registry: base, mode: config.mode, usage });
+  const mesh = createModeMesh({
+    registry: base,
+    mode: config.mode,
+    usage,
+    maxPricePerMTok: config.maxPricePerMTok,
+  });
   const tokens = new Set([config.token]);
   // Key sync is offered only on loopback; a Router bound to 0.0.0.0 never exposes it.
   const keyStore = await MemoryKeyStore.create(config.registryPath, config.mode);

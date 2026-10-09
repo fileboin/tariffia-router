@@ -27,10 +27,12 @@ import {
 } from './registry.js';
 import type { HealthTracker } from './health.js';
 import { rankCandidates, type RankingInput, type ScoreWeights } from './scorer.js';
-import type { Candidate, RouteDecision, Rejection, RouteRequest, ScoredCandidate } from './types.js';
+import type { Candidate, ModelEntry, RouteDecision, Rejection, RouteRequest, ScoredCandidate } from './types.js';
 
 export interface RouterOptions {
   health?: HealthTracker;
+  /** Server-owned maximum USD rate per 1M input and output tokens. */
+  maxPricePerMTok?: number;
   /**
    * Optional synchronous lookup of remaining quota headroom (0..1) for a
    * candidate key. When absent (or returning undefined) every candidate scores
@@ -38,6 +40,37 @@ export interface RouterOptions {
    * and deterministic; the caller supplies a snapshot.
    */
   headroom?: (key: string) => number | undefined;
+}
+
+/** Hard eligibility check shared by pre-score routing and the execution guard. */
+export function priceCapRejectionReason(
+  model: ModelEntry,
+  maxPricePerMTok: number | undefined,
+): string | null {
+  const price = model.price;
+  const input = price?.inPerMTok;
+  const output = price?.outPerMTok;
+  if (
+    typeof input !== 'number' || !Number.isFinite(input) || input < 0 ||
+    typeof output !== 'number' || !Number.isFinite(output) || output < 0
+  ) {
+    return 'price_cap: model pricing is missing or invalid';
+  }
+
+  if (input === 0 && output === 0) return null;
+
+  if (
+    typeof maxPricePerMTok !== 'number' ||
+    !Number.isFinite(maxPricePerMTok) ||
+    maxPricePerMTok < 0
+  ) {
+    return 'price_cap: paid candidates require a valid server price cap';
+  }
+
+  if (input > maxPricePerMTok || output > maxPricePerMTok) {
+    return `price_cap: input ${input} or output ${output} USD/MTok exceeds cap ${maxPricePerMTok}`;
+  }
+  return null;
 }
 
 export class Router {
@@ -56,6 +89,11 @@ export class Router {
     let pool: Candidate[] = [];
     for (const c of this.registry.candidates) {
       if (req.pin && c.key !== req.pin) continue;
+      const priceRejection = priceCapRejectionReason(c.model, this.opts.maxPricePerMTok);
+      if (priceRejection) {
+        rejected.push({ key: c.key, reason: priceRejection });
+        continue;
+      }
       if (!servesPrivacy(c, privacy)) {
         rejected.push({
           key: c.key,
